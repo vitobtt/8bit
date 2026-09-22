@@ -1,0 +1,20 @@
+{
+  "name": "8bits-battle",
+  "version": "1.0.0",
+  "description": "Battle royale 8 bits para el aula por WebSockets",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "echo Sitio estatico: nada que compilar",
+    "pk:dev": "partykit dev",
+    "pk:deploy": "partykit deploy"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "partykit": "^0.0.115"
+  }
+}
