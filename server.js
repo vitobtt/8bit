@@ -290,10 +290,16 @@ const server = http.createServer((req, res) => {
 
 // ---------- WebSockets ----------
 const wss = new WebSocketServer({ server, maxPayload: 1024 });
+const PUBLIC_URL = process.env.RENDER_EXTERNAL_URL || null; // Render la define sola
+let hostAssigned = false;
 
 wss.on('connection', (ws, req) => {
   const addr = req.socket.remoteAddress || '';
-  const isHost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
+  const isLocal = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
+  // En LAN, el profesor es quien abre en localhost. En la nube (Render) no
+  // existe esa IP local, así que el primero en conectar hace de profesor.
+  const isHost = isLocal || !hostAssigned;
+  if (isHost) hostAssigned = true;
   const p = {
     id: nextId++, ws, name: '', joined: false, isHost,
     color: COLORS[colorIdx++ % COLORS.length],
@@ -303,7 +309,8 @@ wss.on('connection', (ws, req) => {
   players.set(p.id, p);
 
   ws.send(JSON.stringify({
-    t: 'welcome', id: p.id, isHost, ips: lanIPs(), port: PORT,
+    t: 'welcome', id: p.id, isHost, ips: PUBLIC_URL ? [] : lanIPs(), port: PORT,
+    publicUrl: PUBLIC_URL,
     map: MAP, tile: TILE, maxShots: MAX_SHOTS, maxHp: MAX_HP,
   }));
 
@@ -343,6 +350,7 @@ wss.on('connection', (ws, req) => {
       events.push({ k: 'kill', killer: 'desconexión', victim: p.name, id: p.id });
     }
     players.delete(p.id);
+    if (p.isHost && !isLocal) hostAssigned = false;
   });
 });
 

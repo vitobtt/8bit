@@ -76,10 +76,12 @@
   </div>
 
   <script>
-    // Modo nube: pon aquí el host que te da "npx partykit deploy"
-    // (algo como "8bits-battle.TU-USUARIO.partykit.dev"). Déjalo vacío
-    // para modo aula/LAN local (npm run dev).
+    // Vercel (este frontend) + Render (server.js como backend):
+    // pon aquí el host que te da Render, ej. "8bit-xxxx.onrender.com".
+    window.GAME_WS_HOST = '';
+    // Alternativa: Vercel + PartyKit (ej. "8bits-battle.TU-USUARIO.partykit.dev").
     window.PARTYKIT_HOST = '';
+    // Si sirves este archivo con npm run dev (server.js en LAN), deja ambos vacíos.
   </script>
   <script src="client.js"></script>
 </body>

@@ -59,17 +59,22 @@ function send(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-function partyUrl() {
-  // Modo nube (Vercel + PartyKit): index.html define window.PARTYKIT_HOST.
-  // Modo aula/LAN (npm run dev -> server.js): sin esa variable, se conecta al mismo host.
-  const host = window.PARTYKIT_HOST;
-  if (!host) return `ws://${location.host}`;
-  const proto = /^(localhost|127\.0\.0\.1)/.test(host) ? 'ws' : 'wss';
-  return `${proto}://${host}/party/main`;
+function wsProto(host) {
+  return /^(localhost|127\.0\.0\.1)/.test(host) ? 'ws' : 'wss';
+}
+
+function gameServerUrl() {
+  // Vercel (frontend) + Render (server.js sin modificar): window.GAME_WS_HOST
+  // apunta al host de Render, misma ruta raíz que usa server.js.
+  if (window.GAME_WS_HOST) return `${wsProto(window.GAME_WS_HOST)}://${window.GAME_WS_HOST}`;
+  // Vercel (frontend) + PartyKit (party/server.js): window.PARTYKIT_HOST usa /party/main.
+  if (window.PARTYKIT_HOST) return `${wsProto(window.PARTYKIT_HOST)}://${window.PARTYKIT_HOST}/party/main`;
+  // Modo aula/LAN (npm run dev -> server.js): sin variables, mismo host que la página.
+  return `ws://${location.host}`;
 }
 
 function connect() {
-  ws = new WebSocket(partyUrl());
+  ws = new WebSocket(gameServerUrl());
   ws.onopen = () => { $('#offline').hidden = true; };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
@@ -95,11 +100,11 @@ function onWelcome(m) {
 
   const list = $('#addrList');
   list.replaceChildren();
-  // Modo LAN: server.js manda ips/port de la red del aula.
-  // Modo nube: party/server.js no los manda, se comparte la URL de la página.
-  const entries = m.ips && m.ips.length
-    ? m.ips.map(ip => `${ip}:${m.port}`)
-    : [location.host];
+  // LAN: server.js manda ips/port de la red del aula.
+  // Render: server.js manda publicUrl (RENDER_EXTERNAL_URL).
+  // PartyKit: no manda ninguno, se comparte la URL de la página (Vercel).
+  const entries = m.publicUrl ? [m.publicUrl]
+    : (m.ips && m.ips.length ? m.ips.map(ip => `${ip}:${m.port}`) : [location.host]);
   for (const e of entries) {
     const d = document.createElement('div');
     d.textContent = e;
