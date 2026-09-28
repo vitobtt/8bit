@@ -1,22 +1,67 @@
 // ============================================================
-//  8 BITS BATTLE - Cliente (navegador de cada alumno)
+//  PIZZA PANZA - Snake de 8 bits con un pizzero glotón
+//  Todo corre en el navegador: no hace falta servidor.
 // ============================================================
 const $ = s => document.querySelector(s);
 const canvas = $('#canvas');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
-const SCALE = 2;                       // resolución interna x2 para textos nítidos
-const W = canvas.width / SCALE, H = canvas.height / SCALE;
 const FONT = '"Press Start 2P", "Courier New", monospace';
 
-let ws, myId = null, isHost = false, joined = false;
-let TILE = 16, maxShots = 10, maxHp = 3;
-let mapLayer = null;                    // mapa pre-dibujado
-let prev = null, curr = null, prevT = 0, currT = 0;
-let particles = [];
-let shakeUntil = 0;
-let muted = false;
-let lastListKey = '';
+// ---- Ajustes del juego ----
+const CELL = 32;                       // tamaño de casilla en píxeles
+const COLS = canvas.width / CELL;      // 30
+const ROWS = canvas.height / CELL;     // 20
+const START = { x: 6, y: 10, len: 3 }; // punto de inicio del pizzero
+const BASE_KG = 70;
+const COMBO_MS = 5000;                 // tiempo para encadenar pizzas
+const PIZZAS_PER_LEVEL = 8;
+const FEVER_MS = 6000;                 // duración del efecto guindilla
+
+const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+
+// ------------------------------------------------------------
+//  Guardado local (récords, logros, pizzero elegido)
+// ------------------------------------------------------------
+const SAVE_KEY = 'pizzapanza-v1';
+const save = loadSave();
+function loadSave() {
+  const def = { name: '', best: 0, top: [], ach: {}, skin: 'clasico', pizzas: 0, games: 0, muted: false };
+  try { return { ...def, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; } catch { return def; }
+}
+function persist() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {}
+}
+
+// ------------------------------------------------------------
+//  Logros y pizzeros desbloqueables
+// ------------------------------------------------------------
+const ACHS = [
+  { id: 'first',     name: 'PRIMER BOCADO',       desc: 'Come tu primera pizza',           test: r => r.pizzas >= 1 },
+  { id: 'p10',       name: 'CON HAMBRE',          desc: '10 pizzas en una partida',        test: r => r.pizzas >= 10 },
+  { id: 'chili',     name: '¡PICA PICA!',         desc: 'Cómete una guindilla',            test: r => r.chilis >= 1 },
+  { id: 'p25',       name: 'BUEN SAQUE',          desc: '25 pizzas en una partida',        test: r => r.pizzas >= 25 },
+  { id: 'combo5',    name: 'MÁQUINA DE COMBOS',   desc: 'Consigue un combo x5',            test: r => r.bestCombo >= 5 },
+  { id: 'gold3',     name: 'FIEBRE DEL ORO',      desc: '3 pizzas doradas en una partida', test: r => r.golds >= 3 },
+  { id: 'lvl5',      name: 'VELOCISTA',           desc: 'Llega al nivel 5',                test: r => r.level >= 5 },
+  { id: 'kg150',     name: 'PESO PESADO',         desc: 'Llega a 150 kg',                  test: r => r.kg >= 150 },
+  { id: 'score3000', name: 'MAESTRO PIZZERO',     desc: 'Haz 3000 puntos',                 test: r => r.score >= 3000 },
+  { id: 'p50',       name: 'ESTÓMAGO SIN FONDO',  desc: '50 pizzas en una partida',        test: r => r.pizzas >= 50 },
+  { id: 'games10',   name: 'CLIENTE FIEL',        desc: 'Juega 10 partidas',               test: () => save.games >= 10 },
+  { id: 'total200',  name: 'LEYENDA DE LA PIZZA', desc: '200 pizzas en total',             test: () => save.pizzas >= 200 },
+];
+
+const SKINS = [
+  { id: 'clasico', name: 'CLÁSICO',    req: null,        hat: '#fff1e8', hatD: '#c2c3c7', coat: '#fff1e8', coatD: '#c2c3c7', trim: '#ff004d', skin: '#ffccaa', hair: '#5f3a1e' },
+  { id: 'napoli',  name: 'NAPOLITANO', req: 'p10',       hat: '#fff1e8', hatD: '#c2c3c7', coat: '#00e436', coatD: '#008751', trim: '#ff004d', skin: '#ffccaa', hair: '#1a1a1a' },
+  { id: 'picante', name: 'PICANTE',    req: 'chili',     hat: '#ff004d', hatD: '#7e2553', coat: '#ff004d', coatD: '#7e2553', trim: '#ffec27', skin: '#ffccaa', hair: '#1a1a1a' },
+  { id: 'ninja',   name: 'NINJA',      req: 'combo5',    hat: '#5f574f', hatD: '#333333', coat: '#5f574f', coatD: '#333333', trim: '#ff004d', skin: '#ffccaa', hair: '#1a1a1a' },
+  { id: 'oro',     name: 'DORADO',     req: 'score3000', hat: '#ffec27', hatD: '#ffa300', coat: '#ffa300', coatD: '#ab5236', trim: '#fff1e8', skin: '#ffccaa', hair: '#ab5236' },
+  { id: 'galaxia', name: 'GALÁCTICO',  req: 'total200',  hat: '#83769c', hatD: '#1d2b53', coat: '#7e2553', coatD: '#1d2b53', trim: '#29adff', skin: '#c2f0ff', hair: '#29adff' },
+];
+const skinUnlocked = s => !s.req || !!save.ach[s.req];
+const currentSkin = () => SKINS.find(s => s.id === save.skin && skinUnlocked(s)) || SKINS[0];
 
 // ------------------------------------------------------------
 //  Sonido 8 bits (WebAudio, sin archivos)
@@ -28,8 +73,8 @@ function initAudio() {
   }
   if (actx && actx.state === 'suspended') actx.resume();
 }
-function beep(freq, dur, { type = 'square', vol = 0.08, slide = 0, delay = 0 } = {}) {
-  if (!actx || muted) return;
+function beep(freq, dur, { type = 'square', vol = 0.07, slide = 0, delay = 0 } = {}) {
+  if (!actx || save.muted) return;
   const t = actx.currentTime + delay;
   const o = actx.createOscillator(), g = actx.createGain();
   o.type = type;
@@ -42,532 +87,724 @@ function beep(freq, dur, { type = 'square', vol = 0.08, slide = 0, delay = 0 } =
   o.stop(t + dur + 0.02);
 }
 const sfx = {
-  shoot: mine => beep(mine ? 880 : 660, 0.08, { vol: mine ? 0.07 : 0.02, slide: -500 }),
-  hit: mine => beep(mine ? 140 : 220, 0.18, { type: 'sawtooth', vol: mine ? 0.12 : 0.04, slide: -100 }),
-  death: () => [440, 330, 220, 110].forEach((f, i) => beep(f, 0.12, { delay: i * 0.1, vol: 0.06 })),
-  empty: () => beep(90, 0.05, { vol: 0.05 }),
-  count: () => beep(523, 0.12),
-  go: () => beep(1046, 0.3),
-  win: () => [523, 659, 784, 1046, 784, 1046].forEach((f, i) => beep(f, 0.14, { delay: i * 0.12 })),
-  lose: () => [392, 330, 262, 196].forEach((f, i) => beep(f, 0.2, { delay: i * 0.18, type: 'triangle', vol: 0.1 })),
+  // Cuanto más largo el combo, más aguda la nota: da gusto encadenar.
+  eat: combo => {
+    const f = 392 * Math.pow(2, Math.min(combo - 1, 12) / 12);
+    beep(f, 0.06); beep(f * 1.5, 0.08, { delay: 0.05 });
+  },
+  gold: () => [784, 988, 1175, 1568].forEach((f, i) => beep(f, 0.08, { delay: i * 0.05, vol: 0.06 })),
+  chili: () => beep(200, 0.35, { type: 'sawtooth', slide: 900, vol: 0.06 }),
+  salad: () => [330, 262, 196].forEach((f, i) => beep(f, 0.14, { delay: i * 0.1, type: 'triangle', vol: 0.1 })),
+  level: () => [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.12, { delay: i * 0.09 })),
+  ach: () => [659, 784, 1046, 1318].forEach((f, i) => beep(f, 0.1, { delay: i * 0.07, type: 'triangle', vol: 0.12 })),
+  death: () => [440, 330, 220, 110].forEach((f, i) => beep(f, 0.14, { delay: i * 0.11, vol: 0.07 })),
+  record: () => [523, 659, 784, 1046, 784, 1046].forEach((f, i) => beep(f, 0.14, { delay: 0.6 + i * 0.12 })),
+  go: () => beep(1046, 0.15),
 };
 
 // ------------------------------------------------------------
-//  Conexión WebSocket
+//  Sprites de píxel (8x8, cada letra es un color)
 // ------------------------------------------------------------
-function send(obj) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+const PIZZA = [
+  '..cccc..',
+  '.cyyyyc.',
+  'cyrryyyc',
+  'cyyyyrrc',
+  'cyrryyyc',
+  'cyyyrryc',
+  '.cyyyyc.',
+  '..cccc..',
+];
+const CHILI = [
+  '......g.',
+  '.....gg.',
+  '....rr..',
+  '...rwr..',
+  '..rrrr..',
+  '.rrrr...',
+  '.rrr....',
+  'rr......',
+];
+const SALAD = [
+  '........',
+  '.gGgGgg.',
+  'gGgGgGgg',
+  'GgGrGgGG',
+  'wwwwwwww',
+  '.wwwwww.',
+  '..wwww..',
+  '........',
+];
+const OVEN = [
+  'bbbbbbbb',
+  'bBbbBbbB',
+  'bbbbbbbb',
+  'b......b',
+  'b.fFfF.b',
+  'bfFfFfFb',
+  'bbbbbbbb',
+  'BbbBbbBb',
+];
+const PAL = {
+  pizza:  { c: '#ab5236', y: '#ffec27', r: '#ff004d' },
+  gold:   { c: '#ffa300', y: '#ffec27', r: '#fff1e8' },
+  chili:  { g: '#00e436', r: '#ff004d', w: '#fff1e8' },
+  salad:  { g: '#00e436', G: '#008751', r: '#ff004d', w: '#c2c3c7' },
+  oven:   { b: '#5f574f', B: '#ab5236', f: '#ffa300', F: '#ff004d' },
+};
+
+function drawSprite(g, rows, pal, x, y, px) {
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < rows[r].length; c++) {
+      const col = pal[rows[r][c]];
+      if (!col) continue;
+      g.fillStyle = col;
+      g.fillRect(Math.round(x + c * px), Math.round(y + r * px), Math.ceil(px), Math.ceil(px));
+    }
+  }
 }
 
-function wsProto(host) {
-  return /^(localhost|127\.0\.0\.1)/.test(host) ? 'ws' : 'wss';
+// Cabeza del pizzero: gorro, bigote y mofletes. Mira hacia donde va.
+function headRows(dir, chomp) {
+  const eyeShift = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+  const eyes = 'SSSSSSSS'.split('');
+  eyes[2 + eyeShift] = 'E';
+  eyes[5 + eyeShift] = 'E';
+  return [
+    '..HHHH..',
+    '.HHHHHH.',
+    '.HHHHHH.',
+    '.hhhhhh.',
+    '.KSSSSK.',
+    eyes.join(''),
+    'SCMMMMCS',
+    chomp ? '.SSOOSS.' : '.SSSSSS.',
+  ];
+}
+function drawHead(g, skin, cx, cy, size, dir, chomp) {
+  const px = size / 8;
+  const pal = { H: skin.hat, h: skin.hatD, S: skin.skin, K: skin.hair, E: '#000', C: '#ff77a8', M: skin.hair, O: '#7e2553' };
+  drawSprite(g, headRows(dir, chomp), pal, cx - size / 2, cy - size / 2, px);
 }
 
-function gameServerUrl() {
-  // Vercel (frontend) + Render (server.js sin modificar): window.GAME_WS_HOST
-  // apunta al host de Render, misma ruta raíz que usa server.js.
-  if (window.GAME_WS_HOST) return `${wsProto(window.GAME_WS_HOST)}://${window.GAME_WS_HOST}`;
-  // Vercel (frontend) + PartyKit (party/server.js): window.PARTYKIT_HOST usa /party/main.
-  if (window.PARTYKIT_HOST) return `${wsProto(window.PARTYKIT_HOST)}://${window.PARTYKIT_HOST}/party/main`;
-  // Modo aula/LAN (npm run dev -> server.js): sin variables, mismo host que la página.
-  return `ws://${location.host}`;
-}
+// Suelo de la pizzería, pre-dibujado una sola vez
+const floor = document.createElement('canvas');
+floor.width = canvas.width; floor.height = canvas.height;
+(() => {
+  const g = floor.getContext('2d');
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      g.fillStyle = (x + y) % 2 ? '#2b1620' : '#3a1d27';
+      g.fillRect(x * CELL, y * CELL, CELL, CELL);
+    }
+  }
+  g.strokeStyle = '#7e2553';
+  g.lineWidth = 4;
+  g.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+})();
 
-function connect() {
-  ws = new WebSocket(gameServerUrl());
-  ws.onopen = () => { $('#offline').hidden = true; };
-  ws.onmessage = e => {
-    const m = JSON.parse(e.data);
-    if (m.t === 'welcome') onWelcome(m);
-    else if (m.t === 'joined') onJoined(m);
-    else if (m.t === 's') onState(m);
+// ------------------------------------------------------------
+//  Estado de la partida
+// ------------------------------------------------------------
+// state: 'menu' | 'ready' | 'play' | 'pause' | 'dying' | 'over'
+let state = 'menu';
+let run = null;
+let stateAt = 0;
+let acc = 0, lastFrame = 0;
+let particles = [], texts = [];
+let shake = { until: 0, power: 0 };
+let banner = null;       // texto grande temporal ("NIVEL 3")
+let chompUntil = 0;
+
+const now = () => performance.now();
+
+function newRun() {
+  const body = [];
+  for (let i = 0; i < START.len; i++) body.push({ x: START.x - i, y: START.y });
+  run = {
+    body, dir: 'right', queue: [], grow: 0,
+    score: 0, pizzas: 0, golds: 0, chilis: 0, kg: BASE_KG, level: 1,
+    combo: 0, bestCombo: 0, lastEat: -1e9, feverUntil: 0,
+    items: [], ovens: [], newAchs: [], deathReason: '',
+    startBest: save.best,
   };
-  ws.onclose = () => {
-    $('#offline').hidden = false;
-    joined = false;
-    setTimeout(connect, 2000);
-  };
+  spawnItem('pizza');
+  particles = []; texts = []; banner = null;
 }
 
-function onWelcome(m) {
-  myId = m.id;
-  isHost = m.isHost;
-  TILE = m.tile;
-  maxShots = m.maxShots;
-  maxHp = m.maxHp;
-  $('#helpShots').textContent = maxShots;
-  buildMap(m.map);
+function startGame() {
+  initAudio();
+  const name = $('#nameInput').value.trim().toUpperCase();
+  save.name = name || 'PIZZERO';
+  save.games++;
+  persist();
+  newRun();
+  checkAchs();
+  setState('ready');
+  showOverlay(null);
+  // Quita el foco de botones/inputs para que ESPACIO no los vuelva a pulsar en plena partida
+  if (document.activeElement) document.activeElement.blur();
+}
 
-  const list = $('#addrList');
-  list.replaceChildren();
-  // LAN: server.js manda ips/port de la red del aula.
-  // Render: server.js manda publicUrl (RENDER_EXTERNAL_URL).
-  // PartyKit: no manda ninguno, se comparte la URL de la página (Vercel).
-  const entries = m.publicUrl ? [m.publicUrl]
-    : (m.ips && m.ips.length ? m.ips.map(ip => `${ip}:${m.port}`) : [location.host]);
-  for (const e of entries) {
-    const d = document.createElement('div');
-    d.textContent = e;
-    list.appendChild(d);
+function setState(s) { state = s; stateAt = now(); }
+
+function tickMs() {
+  const base = Math.max(62, 150 - (run.level - 1) * 11);
+  return now() < run.feverUntil ? base * 0.75 : base;
+}
+
+function fatStage() { return Math.min(5, Math.floor((run.kg - BASE_KG) / 12)); }
+
+function occupied(x, y) {
+  return run.body.some(s => s.x === x && s.y === y)
+    || run.ovens.some(o => o.x === x && o.y === y)
+    || run.items.some(i => i.x === x && i.y === y);
+}
+
+function freeCell(minDistFromHead = 3, avoidAhead = false) {
+  const h = run.body[0];
+  const v = DIRS[run.dir];
+  for (let tries = 0; tries < 500; tries++) {
+    const x = 1 + Math.floor(Math.random() * (COLS - 2));
+    const y = 1 + Math.floor(Math.random() * (ROWS - 2));
+    if (occupied(x, y)) continue;
+    if (Math.abs(x - h.x) + Math.abs(y - h.y) < minDistFromHead) continue;
+    // No poner hornos justo en la trayectoria del pizzero
+    if (avoidAhead && (v.x ? y === h.y && Math.sign(x - h.x) === v.x : x === h.x && Math.sign(y - h.y) === v.y)) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+const ITEM_LIFE = { gold: 6000, chili: 7000, salad: 9000 };
+function spawnItem(type) {
+  const c = freeCell(type === 'salad' ? 4 : 3);
+  if (!c) return;
+  run.items.push({ type, ...c, born: now(), until: ITEM_LIFE[type] ? now() + ITEM_LIFE[type] : 0 });
+}
+const hasItem = t => run.items.some(i => i.type === t);
+
+function rollSpecials() {
+  if (!hasItem('gold') && Math.random() < 0.13) spawnItem('gold');
+  if (!hasItem('chili') && run.level >= 2 && Math.random() < 0.09) spawnItem('chili');
+  if (!hasItem('salad') && run.pizzas >= 5 && Math.random() < 0.14) spawnItem('salad');
+}
+
+// ------------------------------------------------------------
+//  Lógica de cada paso
+// ------------------------------------------------------------
+function queueDir(d) {
+  if (state === 'ready' && run.queue.length === 0 && d !== OPP[run.dir]) { run.dir = d; return; }
+  if (state !== 'play' && state !== 'ready') return;
+  const last = run.queue.length ? run.queue[run.queue.length - 1] : run.dir;
+  if (d === last || d === OPP[last] || run.queue.length >= 3) return;
+  run.queue.push(d);
+}
+
+function step() {
+  if (run.queue.length) run.dir = run.queue.shift();
+  const v = DIRS[run.dir];
+  const h = run.body[0];
+  const nx = h.x + v.x, ny = h.y + v.y;
+  // La cola se mueve en este mismo paso, salvo que esté creciendo
+  const bodyToCheck = run.grow > 0 ? run.body : run.body.slice(0, -1);
+
+  if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) return die('¡TE HAS COMIDO LA PARED!');
+  if (bodyToCheck.some(s => s.x === nx && s.y === ny)) return die('¡TE HAS MORDIDO LA BARRIGA!');
+  if (run.ovens.some(o => o.x === nx && o.y === ny)) return die('¡TE HAS METIDO EN EL HORNO!');
+
+  run.body.unshift({ x: nx, y: ny });
+  if (run.grow > 0) run.grow--; else run.body.pop();
+
+  const i = run.items.findIndex(it => it.x === nx && it.y === ny);
+  if (i >= 0) eat(run.items.splice(i, 1)[0]);
+}
+
+function eat(item) {
+  const t = now();
+  const cx = item.x * CELL + CELL / 2, cy = item.y * CELL + CELL / 2;
+  chompUntil = t + 160;
+
+  if (item.type === 'salad') {
+    const cut = Math.min(3, run.body.length - START.len);
+    if (cut > 0) run.body.splice(run.body.length - cut, cut);
+    run.grow = 0;
+    run.kg = Math.max(BASE_KG, run.kg - 6);
+    run.combo = 0;
+    floatText('¡DIETA! -6 KG', cx, cy, '#00e436');
+    burst(cx, cy, ['#00e436', '#008751'], 14);
+    sfx.salad();
+    return;
   }
 
-  $('#hostPanel').hidden = !isHost;
-  if (isHost) {
-    showScreen('game');
+  run.combo = t - run.lastEat <= COMBO_MS ? run.combo + 1 : 1;
+  run.lastEat = t;
+  run.bestCombo = Math.max(run.bestCombo, run.combo);
+  const fever = t < run.feverUntil;
+  const mult = Math.min(run.combo, 5) * (fever ? 2 : 1);
+
+  let pts = 0;
+  if (item.type === 'pizza') {
+    pts = 10; run.grow += 1; run.kg += 2; run.pizzas++; save.pizzas++;
+    burst(cx, cy, ['#ffec27', '#ff004d', '#ab5236'], 10);
+    sfx.eat(run.combo);
+    spawnItem('pizza');
+    rollSpecials();
+  } else if (item.type === 'gold') {
+    pts = 50; run.grow += 3; run.kg += 5; run.pizzas++; run.golds++; save.pizzas++;
+    burst(cx, cy, ['#ffec27', '#fff1e8', '#ffa300'], 24);
+    sfx.gold();
+    shakeScreen(150, 3);
+  } else if (item.type === 'chili') {
+    pts = 20; run.kg += 1; run.chilis++;
+    run.feverUntil = t + FEVER_MS;
+    burst(cx, cy, ['#ff004d', '#ffa300'], 18);
+    sfx.chili();
+    showBanner('¡PICANTE! PUNTOS X2', '#ff004d');
+  }
+  pts *= mult;
+  run.score += pts;
+  floatText(`+${pts}`, cx, cy, item.type === 'gold' ? '#ffec27' : '#fff1e8');
+  if (run.combo >= 2) floatText(`COMBO X${Math.min(run.combo, 5)}`, cx, cy - 18, '#29adff');
+
+  const lvl = 1 + Math.floor(run.pizzas / PIZZAS_PER_LEVEL);
+  if (lvl > run.level) levelUp(lvl);
+  checkAchs();
+}
+
+function levelUp(lvl) {
+  run.level = lvl;
+  sfx.level();
+  // A partir del nivel 3 aparecen hornos en el suelo
+  if (lvl >= 3 && run.ovens.length < 14) {
+    for (let k = 0; k < 2; k++) {
+      const c = freeCell(6, true);
+      if (c) run.ovens.push(c);
+    }
+    showBanner(`NIVEL ${lvl} · ¡OJO CON LOS HORNOS!`, '#ffa300');
   } else {
-    showScreen('join');
-    let saved = '';
-    try { saved = localStorage.getItem('8bits-name') || ''; } catch {}
-    $('#nameInput').value = saved;
-    $('#nameInput').focus();
-    // Si se ha caído la conexión y ya tenía nombre, vuelve a entrar solo
-    if (saved && sessionStorage.getItem('8bits-auto')) send({ t: 'join', name: saved });
+    showBanner(`NIVEL ${lvl} · ¡MÁS RÁPIDO!`, '#ffec27');
   }
 }
 
-function onJoined(m) {
-  joined = true;
-  try {
-    localStorage.setItem('8bits-name', m.name);
-    sessionStorage.setItem('8bits-auto', '1');
-  } catch {}
-  $('#hostJoinForm').hidden = true;
-  showScreen('game');
+function checkAchs() {
+  for (const a of ACHS) {
+    if (save.ach[a.id] || !a.test(run)) continue;
+    save.ach[a.id] = Date.now();
+    run.newAchs.push(a);
+    const skin = SKINS.find(s => s.req === a.id);
+    toast(`LOGRO: ${a.name}`, skin ? `¡NUEVO PIZZERO: ${skin.name}!` : a.desc);
+    sfx.ach();
+    renderAchs();
+  }
+  persist();
 }
 
-function showScreen(id) {
-  $('#join').hidden = id !== 'join';
-  $('#game').hidden = id !== 'game';
+function die(reason) {
+  run.deathReason = reason;
+  setState('dying');
+  sfx.death();
+  shakeScreen(450, 8);
+  const h = run.body[0];
+  burst(h.x * CELL + CELL / 2, h.y * CELL + CELL / 2, ['#ff004d', '#fff1e8', '#ffec27'], 40);
+  finishRun();
 }
 
-$('#joinForm').addEventListener('submit', e => {
-  e.preventDefault();
-  initAudio();
-  send({ t: 'join', name: $('#nameInput').value.toUpperCase() });
-});
-$('#hostJoinForm').addEventListener('submit', e => {
-  e.preventDefault();
-  initAudio();
-  const n = $('#hostName').value.trim();
-  if (n) send({ t: 'join', name: n.toUpperCase() });
-});
-$('#btnStart').addEventListener('click', () => { initAudio(); send({ t: 'start' }); });
-$('#btnStop').addEventListener('click', () => send({ t: 'stop' }));
+function finishRun() {
+  const entry = { name: save.name, score: run.score, kg: run.kg, when: Date.now() };
+  if (run.score > 0) save.top.push(entry);
+  save.top.sort((a, b) => b.score - a.score);
+  save.top = save.top.slice(0, 5);
+  run.rank = save.top.indexOf(entry);
+  run.newBest = run.score > save.best;
+  if (run.newBest) save.best = run.score;
+  persist();
+  renderTop(entry);
+}
 
 // ------------------------------------------------------------
-//  Estado recibido del servidor
+//  Efectos
 // ------------------------------------------------------------
-function me() { return curr && curr.p.find(p => p.id === myId); }
-function byId(state, id) { return state && state.p.find(p => p.id === id); }
-
-function onState(s) {
-  const oldPhase = curr && curr.ph;
-  const oldCd = curr && curr.cd;
-  prev = curr; prevT = currT;
-  curr = s; currT = performance.now();
-
-  // Sonidos de la cuenta atrás
-  if (s.ph === 'countdown' && s.cd !== oldCd) sfx.count();
-  if (s.ph === 'playing' && oldPhase === 'countdown') sfx.go();
-
-  for (const ev of s.e) handleEvent(ev);
-  updateHud();
-  updateSide();
-}
-
-function handleEvent(ev) {
-  const p = byId(curr, ev.id);
-  if (ev.k === 'shot') sfx.shoot(ev.id === myId);
-  if (ev.k === 'hit' && p) {
-    sfx.hit(ev.id === myId);
-    burst(p.x, p.y, p.c, 8);
-    if (ev.id === myId) shakeUntil = performance.now() + 250;
-  }
-  if (ev.k === 'wall') burst(ev.x, ev.y, '#c2c3c7', 3, 1);
-  if (ev.k === 'kill') {
-    if (p) burst(p.x, p.y, p.c, 20, 2.5);
-    sfx.death();
-    addFeed(ev.killer, ev.victim);
-  }
-  if (ev.k === 'end') {
-    const m = me();
-    if (joined && m && m.ig) (ev.winner === m.n ? sfx.win : sfx.lose)();
-    else sfx.win();
+function burst(x, y, colors, n) {
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 180;
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life: 0.5 + Math.random() * 0.5, t: 0,
+      c: colors[k % colors.length], s: 4 + Math.floor(Math.random() * 3) * 2 });
   }
 }
+function floatText(s, x, y, c) { texts.push({ s, x, y, c, t: 0 }); }
+function shakeScreen(ms, power) { shake = { until: now() + ms, power }; }
+function showBanner(s, c) { banner = { s, c, at: now() }; }
 
-function burst(x, y, color, n, speed = 1.8) {
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2, v = Math.random() * speed + 0.3;
-    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 20 + Math.random() * 15, c: Math.random() < 0.3 ? '#fff' : color });
+let toastTimer = 0;
+function toast(title, sub) {
+  const el = $('#toast');
+  el.replaceChildren();
+  const small = document.createElement('small');
+  small.textContent = title;
+  el.append(small, sub);
+  el.hidden = false;
+  // reinicia la animación de entrada
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+}
+
+// ------------------------------------------------------------
+//  Bucle principal
+// ------------------------------------------------------------
+function frame(t) {
+  const dt = Math.min(0.05, (t - lastFrame) / 1000 || 0);
+  lastFrame = t;
+
+  if (state === 'ready' && t - stateAt > 900) { setState('play'); acc = 0; sfx.go(); }
+  if (state === 'play') {
+    acc += dt * 1000;
+    const ms = tickMs();
+    while (acc >= ms && state === 'play') { acc -= ms; step(); }
+    run.items = run.items.filter(i => !i.until || t < i.until);
   }
+  if (state === 'dying' && t - stateAt > 1100) { setState('over'); showOver(); }
+
+  for (const p of particles) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; }
+  particles = particles.filter(p => p.t < p.life);
+  for (const s of texts) s.t += dt;
+  texts = texts.filter(s => s.t < 1);
+
+  render(t);
+  updateHud(t);
+  requestAnimationFrame(frame);
 }
 
-function addFeed(killer, victim) {
-  const li = document.createElement('li');
-  const k = document.createElement('b'); k.textContent = killer;
-  const v = document.createElement('b'); v.textContent = victim;
-  li.append(k, ' ► ', v);
-  const feed = $('#feed');
-  feed.prepend(li);
-  while (feed.children.length > 6) feed.lastChild.remove();
+function render(t) {
+  ctx.save();
+  if (t < shake.until) {
+    ctx.translate((Math.random() - 0.5) * shake.power * 2, (Math.random() - 0.5) * shake.power * 2);
+  }
+  ctx.drawImage(floor, 0, 0);
+
+  if (run) {
+    // Punto de inicio marcado en el suelo
+    ctx.fillStyle = 'rgba(255, 236, 39, .12)';
+    ctx.fillRect(START.x * CELL, START.y * CELL, CELL, CELL);
+
+    for (const o of run.ovens) drawOven(o, t);
+    for (const it of run.items) drawItem(it, t);
+    drawPizzero(t);
+
+    // Fiebre picante: el borde parpadea en rojo
+    if (t < run.feverUntil && Math.floor(t / 120) % 2) {
+      ctx.strokeStyle = '#ff004d';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+    }
+  }
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
+    ctx.fillStyle = p.c;
+    ctx.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const s of texts) {
+    ctx.globalAlpha = 1 - s.t;
+    ctx.font = `14px ${FONT}`;
+    ctx.fillStyle = '#000';
+    ctx.fillText(s.s, s.x + 2, s.y - s.t * 40 + 2);
+    ctx.fillStyle = s.c;
+    ctx.fillText(s.s, s.x, s.y - s.t * 40);
+  }
+  ctx.globalAlpha = 1;
+
+  if (banner && t - banner.at < 1800) bigText(banner.s, canvas.height * 0.2, banner.c, 20);
+  if (state === 'ready') bigText('¡PREPARADO!', canvas.height / 2 - 60, '#ffec27', 28);
+  if (state === 'pause') {
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    bigText('PAUSA', canvas.height / 2, '#ffec27', 36);
+    bigText('PULSA P PARA SEGUIR', canvas.height / 2 + 50, '#fff1e8', 12);
+  }
+  ctx.restore();
 }
 
-function updateHud() {
-  const m = me();
-  const inGame = m && m.ig;
-  const hp = inGame ? Math.max(0, m.hp) : 0;
-  const am = inGame ? m.am : 0;
-  $('#hudHp').textContent = inGame ? '♥'.repeat(hp) + '♡'.repeat(maxHp - hp) : '-';
-  $('#hudAmmo').textContent = inGame ? '▮'.repeat(am) + '▯'.repeat(maxShots - am) : '-';
-  $('#hudAmmoNum').textContent = inGame ? `${am}/${maxShots}` : '';
-  $('#hudKills').textContent = inGame ? m.k : 0;
+function bigText(s, y, color, size) {
+  ctx.font = `${size}px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#000';
+  ctx.fillText(s, canvas.width / 2 + 4, y + 4);
+  ctx.fillStyle = color;
+  ctx.fillText(s, canvas.width / 2, y);
 }
 
-function updateSide() {
-  const ps = [...curr.p].sort((a, b) => (b.ig && b.al) - (a.ig && a.al) || b.k - a.k);
-  const key = ps.map(p => `${p.id}|${p.n}|${p.hp}|${p.al}|${p.ig}|${p.k}`).join(';') + curr.ph;
-  if (key === lastListKey) return;
-  lastListKey = key;
+function drawOven(o, t) {
+  const flick = Math.floor(t / 150 + o.x) % 2;
+  const pal = flick ? PAL.oven : { ...PAL.oven, f: '#ff004d', F: '#ffa300' };
+  drawSprite(ctx, OVEN, pal, o.x * CELL, o.y * CELL, CELL / 8);
+}
 
-  const playing = curr.ph !== 'lobby';
-  const alive = curr.p.filter(p => p.ig && p.al).length;
-  $('#aliveCount').textContent = playing ? `(${alive} VIVOS)` : `(${curr.p.length})`;
+function drawItem(it, t) {
+  // Los objetos que caducan parpadean en sus 2 últimos segundos
+  if (it.until && it.until - t < 2000 && Math.floor(t / 100) % 2) return;
+  const bob = Math.round(Math.sin((t - it.born) / 180) * 2);
+  const x = it.x * CELL, y = it.y * CELL + bob;
+  if (it.type === 'pizza') drawSprite(ctx, PIZZA, PAL.pizza, x, y, CELL / 8);
+  else if (it.type === 'gold') {
+    drawSprite(ctx, PIZZA, PAL.gold, x, y, CELL / 8);
+    if (Math.random() < 0.15) burst(x + Math.random() * CELL, y + Math.random() * CELL, ['#fff1e8'], 1);
+  }
+  else if (it.type === 'chili') drawSprite(ctx, CHILI, PAL.chili, x, y, CELL / 8);
+  else if (it.type === 'salad') drawSprite(ctx, SALAD, PAL.salad, x, y, CELL / 8);
+}
 
-  const ul = $('#playerList');
-  ul.replaceChildren();
-  for (const p of ps) {
+function drawPizzero(t) {
+  const skin = currentSkin();
+  const stage = fatStage();
+  const body = run.body;
+  const th = Math.round(CELL * (0.46 + stage * 0.1));   // grosor de la barriga
+  const dying = state === 'dying' && Math.floor(t / 90) % 2;
+  const coat = dying ? '#ff004d' : skin.coat;
+  const center = s => ({ x: s.x * CELL + CELL / 2, y: s.y * CELL + CELL / 2 });
+
+  // Tramos del cuerpo: rectángulos que unen el centro de cada casilla con la siguiente
+  const seg = (a, b, w, color) => {
+    const x1 = Math.min(a.x, b.x) - w / 2, y1 = Math.min(a.y, b.y) - w / 2;
+    ctx.fillStyle = color;
+    ctx.fillRect(x1, y1, Math.abs(a.x - b.x) + w, Math.abs(a.y - b.y) + w);
+  };
+  for (let i = body.length - 1; i > 0; i--) seg(center(body[i]), center(body[i - 1]), th + 4, dying ? '#7e2553' : skin.coatD);
+  for (let i = body.length - 1; i > 0; i--) seg(center(body[i]), center(body[i - 1]), th, coat);
+
+  // Botones del uniforme
+  ctx.fillStyle = skin.trim;
+  for (let i = 2; i < body.length; i += 2) {
+    const c = center(body[i]);
+    ctx.fillRect(c.x - 3, c.y - 3, 6, 6);
+  }
+  // Zapatos en la cola
+  const tail = center(body[body.length - 1]);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(tail.x - th / 2, tail.y - th / 2, th, th);
+
+  // Pañuelo al cuello y cabeza (más grande cuanto más gordo)
+  const h = center(body[0]);
+  ctx.fillStyle = skin.trim;
+  ctx.fillRect(h.x - th / 2 - 2, h.y - th / 2 - 2, th + 4, th + 4);
+  const size = Math.round(CELL * (1.05 + stage * 0.1));
+  const chomp = t < chompUntil || (state === 'play' && Math.floor(t / 220) % 2 && nearFood());
+  drawHead(ctx, skin, h.x, h.y - 2, size, run.dir, chomp);
+}
+
+// El pizzero abre la boca cuando tiene comida cerca
+function nearFood() {
+  const h = run.body[0];
+  return run.items.some(i => i.type !== 'salad' && Math.abs(i.x - h.x) + Math.abs(i.y - h.y) <= 3);
+}
+
+// ------------------------------------------------------------
+//  HUD, menús y paneles
+// ------------------------------------------------------------
+let lastHud = '';
+function updateHud(t) {
+  if (!run) return;
+  const comboLeft = Math.max(0, 1 - (t - run.lastEat) / COMBO_MS);
+  const comboOn = run.combo >= 1 && comboLeft > 0 && state === 'play';
+  const key = [run.score, save.best, run.kg, run.level, comboOn ? run.combo : 0].join('|');
+  if (key !== lastHud) {
+    lastHud = key;
+    $('#hudScore').textContent = run.score;
+    $('#hudBest').textContent = Math.max(save.best, run.score);
+    $('#hudKg').textContent = `${run.kg} KG`;
+    $('#hudLevel').textContent = run.level;
+    $('#hudCombo').textContent = comboOn ? `X${Math.min(run.combo, 5)}` : '-';
+  }
+  $('#hudComboBar').style.width = `${comboOn ? comboLeft * 100 : 0}%`;
+}
+
+function showOverlay(id) {
+  $('#menu').hidden = id !== 'menu';
+  $('#over').hidden = id !== 'over';
+}
+
+function showOver() {
+  $('#oScore').textContent = run.score;
+  $('#oPizzas').textContent = run.pizzas;
+  $('#oKg').textContent = `${run.kg} KG`;
+  $('#oCombo').textContent = run.bestCombo ? `X${Math.min(run.bestCombo, 5)}` : '-';
+  $('#overReason').textContent = run.deathReason + ' VUELVES AL PUNTO DE INICIO.';
+
+  const rec = $('#oRecord');
+  rec.classList.toggle('new', run.newBest);
+  if (run.newBest && run.startBest > 0) { rec.textContent = '¡NUEVO RÉCORD!'; sfx.record(); }
+  else if (run.newBest) rec.textContent = '¡PRIMER RÉCORD!';
+  else if (run.score === 0) rec.textContent = '¡LA PRÓXIMA VEZ CÓMETE ALGUNA PIZZA!';
+  else if (run.rank >= 0) rec.textContent = `¡ENTRAS EN EL TOP 5! (PUESTO ${run.rank + 1})`;
+  else rec.textContent = `TE FALTARON ${save.best - run.score + 1} PUNTOS PARA TU RÉCORD`;
+
+  const achs = $('#oAchs');
+  achs.replaceChildren();
+  for (const a of run.newAchs) {
+    const d = document.createElement('div');
+    const skin = SKINS.find(s => s.req === a.id);
+    d.textContent = `✓ ${a.name}${skin ? ` → PIZZERO ${skin.name}` : ''}`;
+    achs.appendChild(d);
+  }
+
+  const next = ACHS.find(a => !save.ach[a.id]);
+  $('#oNext').textContent = next ? `PRÓXIMO LOGRO: ${next.desc.toUpperCase()}` : '¡TIENES TODOS LOS LOGROS!';
+  $('#overTitle').textContent = run.newBest ? '¡QUÉ BANQUETE!' : '¡CATAPUM!';
+  showOverlay('over');
+}
+
+function goMenu() {
+  setState('menu');
+  run = null;
+  lastHud = '';
+  renderSkin();
+  showOverlay('menu');
+}
+
+function renderTop(highlight) {
+  const list = $('#topList');
+  list.replaceChildren();
+  if (!save.top.length) {
     const li = document.createElement('li');
-    if (playing && (!p.ig || !p.al)) li.className = 'dead';
-    if (p.id === myId) li.classList.add('me');
-    const name = document.createElement('span');
-    name.className = 'pname';
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.background = p.c;
-    name.append(dot, p.n);
-    const info = document.createElement('span');
-    info.textContent = playing && p.ig ? `${'♥'.repeat(Math.max(0, p.hp))} ${p.k}☠` : (playing ? 'ESPERA' : 'LISTO');
-    li.append(name, info);
-    ul.appendChild(li);
+    li.className = 'empty';
+    li.textContent = 'AÚN NO HAY PARTIDAS. ¡SÉ EL PRIMERO!';
+    list.appendChild(li);
+    return;
   }
+  save.top.forEach((e, i) => {
+    const li = document.createElement('li');
+    if (e === highlight) li.className = 'me';
+    const n = document.createElement('span');
+    n.textContent = `${i + 1}. ${e.name}`;
+    const s = document.createElement('span');
+    s.textContent = e.score;
+    li.append(n, s);
+    list.appendChild(li);
+  });
+}
 
-  if (isHost) {
-    $('#btnStart').disabled = curr.ph !== 'lobby' || curr.p.length < 2;
-    $('#btnStart').textContent = curr.ph === 'lobby' && curr.p.length < 2 ? 'FALTAN JUGADORES' : 'EMPEZAR PARTIDA';
-    $('#btnStop').disabled = curr.ph === 'lobby';
+function renderAchs() {
+  const list = $('#achList');
+  list.replaceChildren();
+  let done = 0;
+  for (const a of ACHS) {
+    const li = document.createElement('li');
+    const ok = !!save.ach[a.id];
+    if (ok) { li.className = 'done'; done++; }
+    const b = document.createElement('b');
+    b.textContent = a.name;
+    const s = document.createElement('span');
+    const skin = SKINS.find(k => k.req === a.id);
+    s.textContent = a.desc + (skin ? ` · PREMIO: ${skin.name}` : '');
+    li.append(b, s);
+    list.appendChild(li);
   }
+  $('#achCount').textContent = `${done}/${ACHS.length}`;
+}
+
+// Selector de pizzero en el menú
+let skinIdx = Math.max(0, SKINS.findIndex(s => s.id === save.skin));
+function renderSkin() {
+  const s = SKINS[skinIdx];
+  const unlocked = skinUnlocked(s);
+  const c = $('#skinCanvas');
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = s.coatD; g.fillRect(24, 60, 48, 36);
+  g.fillStyle = s.coat;  g.fillRect(28, 60, 40, 36);
+  g.fillStyle = s.trim;  g.fillRect(28, 58, 40, 6);
+  g.fillRect(45, 72, 6, 6); g.fillRect(45, 86, 6, 6);
+  drawHead(g, s, 48, 38, 64, 'down', false);
+  if (!unlocked) { g.fillStyle = 'rgba(0,0,0,.7)'; g.fillRect(0, 0, c.width, c.height); }
+  $('#skinName').textContent = s.name;
+  const req = ACHS.find(a => a.id === s.req);
+  $('#skinLock').textContent = unlocked ? '' : `BLOQUEADO: ${req.desc.toUpperCase()}`;
+  $('#playBtn').disabled = !unlocked;
+  if (unlocked) { save.skin = s.id; persist(); }
+}
+function cycleSkin(d) {
+  skinIdx = (skinIdx + d + SKINS.length) % SKINS.length;
+  renderSkin();
+  initAudio();
+  beep(660, 0.05);
 }
 
 // ------------------------------------------------------------
 //  Controles
 // ------------------------------------------------------------
-const keys = { u: false, d: false, l: false, r: false };
-const KEYMAP = {
-  KeyW: 'u', ArrowUp: 'u', KeyS: 'd', ArrowDown: 'd',
-  KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
+const KEYS = {
+  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
+  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
 };
-let aim = 0, mouse = null, inputDirty = false;
 
-function typing() {
-  const el = document.activeElement;
-  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+function togglePause() {
+  if (state === 'play') setState('pause');
+  else if (state === 'pause') { setState('play'); acc = 0; }
 }
 
-addEventListener('keydown', e => {
-  if (typing()) return;
-  initAudio();
-  const k = KEYMAP[e.code];
-  if (k) { e.preventDefault(); if (!keys[k]) { keys[k] = true; inputDirty = true; } }
-  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) shoot(); }
-  if (e.code === 'KeyM') muted = !muted;
-});
-addEventListener('keyup', e => {
-  const k = KEYMAP[e.code];
-  if (k && keys[k]) { keys[k] = false; inputDirty = true; }
-});
-addEventListener('blur', () => {
-  for (const k in keys) keys[k] = false;
-  inputDirty = true;
-});
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'KeyM') { save.muted = !save.muted; persist(); toast('SONIDO', save.muted ? 'DESACTIVADO' : 'ACTIVADO'); return; }
 
-canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  mouse = { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
-});
-canvas.addEventListener('mouseleave', () => { mouse = null; });
-canvas.addEventListener('mousedown', e => {
-  if (e.button !== 0) return;
-  e.preventDefault();
-  if (document.activeElement) document.activeElement.blur();
-  initAudio();
-  shoot();
-});
-canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-function shoot() {
-  const m = me();
-  if (!joined || !m || !m.ig || !m.al || curr.ph !== 'playing') return;
-  if (m.am <= 0) { sfx.empty(); return; }
-  send({ t: 'shoot', a: aim });
-}
-
-// Enviar teclas y ángulo como mucho 20 veces por segundo
-setInterval(() => {
-  if (joined && inputDirty) {
-    send({ t: 'in', ...keys, a: Math.round(aim * 100) / 100 });
-    inputDirty = false;
+  if (state === 'menu') {
+    if (e.code === 'ArrowLeft') cycleSkin(-1);
+    else if (e.code === 'ArrowRight') cycleSkin(1);
+    return;
   }
-}, 50);
+  if (state === 'over' && (e.code === 'Space' || e.code === 'Enter')) {
+    e.preventDefault();
+    startGame();
+    return;
+  }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
+  const d = KEYS[e.code];
+  if (d) { e.preventDefault(); queueDir(d); }
+});
+
+// Si cambias de pestaña, el juego se pausa solo
+window.addEventListener('blur', () => { if (state === 'play') setState('pause'); });
+
+// Deslizar el dedo sobre el canvas
+let touch0 = null;
+canvas.addEventListener('touchstart', e => {
+  const t = e.changedTouches[0];
+  touch0 = { x: t.clientX, y: t.clientY };
+  if (state === 'pause') togglePause();
+}, { passive: true });
+canvas.addEventListener('touchend', e => {
+  if (!touch0) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touch0.x, dy = t.clientY - touch0.y;
+  touch0 = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+  queueDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+}, { passive: true });
+
+for (const b of document.querySelectorAll('#pad button')) {
+  b.addEventListener('pointerdown', e => { e.preventDefault(); queueDir(b.dataset.dir); });
+}
+
+$('#menuForm').addEventListener('submit', e => { e.preventDefault(); startGame(); });
+$('#againBtn').addEventListener('click', startGame);
+$('#menuBtn').addEventListener('click', goMenu);
+$('#skinPrev').addEventListener('click', () => cycleSkin(-1));
+$('#skinNext').addEventListener('click', () => cycleSkin(1));
 
 // ------------------------------------------------------------
-//  Dibujo
+//  Arranque
 // ------------------------------------------------------------
-function buildMap(map) {
-  mapLayer = document.createElement('canvas');
-  mapLayer.width = map[0].length * TILE;
-  mapLayer.height = map.length * TILE;
-  const g = mapLayer.getContext('2d');
-  for (let y = 0; y < map.length; y++) {
-    for (let x = 0; x < map[y].length; x++) {
-      const px = x * TILE, py = y * TILE;
-      if (map[y][x] === '#') {
-        // Muro de ladrillos
-        g.fillStyle = '#5f574f'; g.fillRect(px, py, TILE, TILE);
-        g.fillStyle = '#000';
-        g.fillRect(px, py + 7, TILE, 1);
-        g.fillRect(px, py + 15, TILE, 1);
-        g.fillRect(px + 7, py, 1, 7);
-        g.fillRect(px + 3, py + 8, 1, 7);
-        g.fillRect(px + 12, py + 8, 1, 7);
-        g.fillStyle = '#c2c3c7';
-        g.fillRect(px, py, TILE, 1);
-      } else {
-        // Suelo a cuadros
-        g.fillStyle = (x + y) % 2 ? '#1d2b53' : '#18244a';
-        g.fillRect(px, py, TILE, TILE);
-        if ((x * 7 + y * 13) % 11 === 0) {
-          g.fillStyle = '#2a3a6a';
-          g.fillRect(px + 5, py + 9, 2, 1);
-          g.fillRect(px + 10, py + 4, 1, 2);
-        }
-      }
-    }
-  }
-}
-
-// Sprite 10x10: X = color del jugador, o = contorno, w = blanco, e = pupila
-const SPRITE = [
-  '..oooooo..',
-  '.oXXXXXXo.',
-  'oXXXXXXXXo',
-  'oXXwwXXwwo',
-  'oXXweXXweo',
-  'oXXXXXXXXo',
-  'oXXXXXXXXo',
-  '.oXXXXXXo.',
-  '.oXo..oXo.',
-  '.oo....oo.',
-];
-
-function drawSprite(x, y, color, flip, flash) {
-  const ox = Math.round(x) - 5, oy = Math.round(y) - 5;
-  for (let j = 0; j < 10; j++) {
-    for (let i = 0; i < 10; i++) {
-      const ch = SPRITE[j][flip ? 9 - i : i];
-      if (ch === '.') continue;
-      ctx.fillStyle = flash ? '#fff'
-        : ch === 'X' ? color : ch === 'w' ? '#fff' : '#000';
-      ctx.fillRect(ox + i, oy + j, 1, 1);
-    }
-  }
-}
-
-function text(str, x, y, size = 8, color = '#fff', align = 'center') {
-  ctx.font = `${size}px ${FONT}`;
-  ctx.textAlign = align;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#000';
-  ctx.fillText(str, x + 1, y + 1);
-  ctx.fillStyle = color;
-  ctx.fillText(str, x, y);
-}
-
-function lerpPlayers() {
-  if (!curr) return [];
-  if (!prev) return curr.p;
-  const span = Math.max(1, currT - prevT);
-  const t = Math.min(1, (performance.now() - currT) / span);
-  return curr.p.map(p => {
-    const o = byId(prev, p.id);
-    if (!o || !o.al || !p.ig) return p;
-    return { ...p, x: o.x + (p.x - o.x) * t, y: o.y + (p.y - o.y) * t };
-  });
-}
-
-let hitFlash = new Map();
-
-function render() {
-  requestAnimationFrame(render);
-  const now = performance.now();
-
-  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.save();
-  if (now < shakeUntil) ctx.translate(Math.round(Math.random() * 4 - 2), Math.round(Math.random() * 4 - 2));
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(-4, -4, W + 8, H + 8);
-  if (mapLayer) ctx.drawImage(mapLayer, 0, 0);
-
-  if (!curr) { ctx.restore(); return; }
-
-  const players = lerpPlayers();
-  const m = players.find(p => p.id === myId);
-
-  // Ángulo de apuntado
-  if (m && mouse) {
-    const a = Math.atan2(mouse.y - m.y, mouse.x - m.x);
-    if (Math.abs(a - aim) > 0.02) { aim = a; inputDirty = true; }
-  }
-
-  // Zona peligrosa
-  if (curr.ph === 'playing' && curr.z < Math.hypot(W / 2, H / 2) + 10) {
-    ctx.fillStyle = 'rgba(255, 0, 77, 0.28)';
-    ctx.beginPath();
-    ctx.rect(0, 0, W, H);
-    ctx.arc(W / 2, H / 2, Math.max(0, curr.z), 0, Math.PI * 2, true);
-    ctx.fill('evenodd');
-    ctx.strokeStyle = '#ff004d';
-    ctx.setLineDash([4, 4]);
-    ctx.lineDashOffset = -now / 60;
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, Math.max(0, curr.z), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // Jugadores caídos (lápida)
-  for (const p of players) {
-    if (!p.ig || p.al || curr.ph === 'lobby') continue;
-    const x = Math.round(p.x), y = Math.round(p.y);
-    ctx.fillStyle = '#5f574f';
-    ctx.fillRect(x - 3, y - 5, 6, 9);
-    ctx.fillRect(x - 4, y - 3, 8, 7);
-    ctx.fillStyle = '#c2c3c7';
-    ctx.fillRect(x - 1, y - 3, 2, 5);
-    ctx.fillRect(x - 2, y - 2, 4, 1);
-  }
-
-  // Balas
-  for (const [bx, by] of curr.b) {
-    ctx.fillStyle = '#ffa300';
-    ctx.fillRect(bx - 2, by - 2, 4, 4);
-    ctx.fillStyle = '#fff1e8';
-    ctx.fillRect(bx - 1, by - 1, 2, 2);
-  }
-
-  // Jugadores vivos
-  if (curr.ph !== 'lobby') {
-    for (const p of players) {
-      if (!p.ig || !p.al) continue;
-      if (curr.e.some(e => e.k === 'hit' && e.id === p.id)) hitFlash.set(p.id, now + 120);
-      const flash = (hitFlash.get(p.id) || 0) > now;
-      const a = p.id === myId ? aim : p.a;
-
-      // Arma
-      ctx.strokeStyle = '#c2c3c7';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(Math.round(p.x), Math.round(p.y));
-      ctx.lineTo(Math.round(p.x + Math.cos(a) * 9), Math.round(p.y + Math.sin(a) * 9));
-      ctx.stroke();
-
-      drawSprite(p.x, p.y, p.c, Math.cos(a) < 0, flash);
-
-      // Indicador de "tú"
-      if (p.id === myId) {
-        ctx.fillStyle = '#ffec27';
-        const bob = Math.floor(now / 250) % 2;
-        ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 21 - bob, 5, 1);
-        ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 20 - bob, 3, 1);
-        ctx.fillRect(Math.round(p.x), Math.round(p.y) - 19 - bob, 1, 1);
-      }
-
-      // Nombre y vidas
-      text(p.n, p.x, p.y - 14, 5, p.id === myId ? '#ffec27' : '#fff1e8');
-      for (let i = 0; i < maxHp; i++) {
-        ctx.fillStyle = i < p.hp ? '#ff004d' : '#5f574f';
-        ctx.fillRect(Math.round(p.x) - maxHp * 2 + i * 4 + 1, Math.round(p.y) + 8, 3, 2);
-      }
-    }
-  }
-
-  // Partículas
-  particles = particles.filter(pt => {
-    pt.x += pt.vx; pt.y += pt.vy; pt.vx *= 0.92; pt.vy *= 0.92;
-    ctx.fillStyle = pt.c;
-    ctx.fillRect(Math.round(pt.x), Math.round(pt.y), 2, 2);
-    return --pt.life > 0;
-  });
-
-  // Mira
-  if (m && m.al && mouse && curr.ph === 'playing') {
-    const mx = Math.round(mouse.x), my = Math.round(mouse.y);
-    ctx.fillStyle = m.am > 0 ? '#ffec27' : '#5f574f';
-    ctx.fillRect(mx - 4, my, 3, 1); ctx.fillRect(mx + 2, my, 3, 1);
-    ctx.fillRect(mx, my - 4, 1, 3); ctx.fillRect(mx, my + 2, 1, 3);
-  }
-
-  ctx.restore();
-  drawOverlay(m);
-}
-
-function drawOverlay(m) {
-  const ph = curr.ph;
-  const dim = () => { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H); };
-  const blink = Math.floor(performance.now() / 500) % 2 === 0;
-
-  if (ph === 'lobby') {
-    dim();
-    text('8 BITS BATTLE', W / 2, 90, 24, '#ffec27');
-    text(`${curr.p.length} JUGADOR${curr.p.length === 1 ? '' : 'ES'} CONECTADO${curr.p.length === 1 ? '' : 'S'}`, W / 2, 140, 8, '#29adff');
-    if (isHost) {
-      text(curr.p.length < 2 ? 'ESPERANDO A LOS ALUMNOS...' : 'PULSA "EMPEZAR PARTIDA"', W / 2, 180, 8, '#00e436');
-    } else if (blink) {
-      text('ESPERANDO A QUE EMPIECE LA PARTIDA...', W / 2, 180, 8, '#00e436');
-    }
-    text(`${maxShots} TIROS  ·  ${maxHp} VIDAS  ·  SOLO QUEDA UNO`, W / 2, 230, 7, '#83769c');
-  } else if (ph === 'countdown') {
-    dim();
-    text(String(curr.cd), W / 2, H / 2 - 10, 48, '#ffec27');
-    text('¡PREPÁRATE!', W / 2, H / 2 + 40, 10, '#fff1e8');
-  } else if (ph === 'playing') {
-    const alive = curr.p.filter(p => p.ig && p.al).length;
-    text(`VIVOS: ${alive}`, 8, 12, 8, '#fff1e8', 'left');
-    if (curr.zt > 0) text(`ZONA EN ${curr.zt}s`, W - 8, 12, 8, '#ffa300', 'right');
-    else if (curr.z > 0) text('¡LA ZONA SE CIERRA!', W - 8, 12, 8, blink ? '#ff004d' : '#ffa300', 'right');
-
-    if (m && m.ig && !m.al) {
-      text('HAS CAÍDO', W / 2, H / 2 - 10, 20, '#ff004d');
-      text('MIRANDO LA PARTIDA...', W / 2, H / 2 + 20, 8, '#fff1e8');
-    } else if (m && !m.ig) {
-      text('PARTIDA EN CURSO - ENTRAS EN LA SIGUIENTE', W / 2, H - 14, 7, '#ffec27');
-    } else if (m && m.al && m.am === 0 && blink) {
-      text('¡SIN MUNICIÓN! ¡ESCONDETE!', W / 2, H - 14, 8, '#ff004d');
-    }
-  } else if (ph === 'ended') {
-    dim();
-    if (curr.w) {
-      const won = m && m.n === curr.w;
-      text(won ? '¡HAS GANADO!' : 'GANADOR', W / 2, 110, won ? 24 : 16, '#ffec27');
-      text(curr.w, W / 2, 160, 24, blink ? '#00e436' : '#fff1e8');
-    } else {
-      text('¡EMPATE!', W / 2, 130, 24, '#ffec27');
-    }
-    text('VOLVIENDO A LA SALA...', W / 2, 240, 8, '#83769c');
-  }
-}
-
-connect();
-render();
+$('#nameInput').value = save.name;
+$('#hudBest').textContent = save.best;
+renderTop();
+renderAchs();
+renderSkin();
+showOverlay('menu');
+requestAnimationFrame(t => { lastFrame = t; requestAnimationFrame(frame); });

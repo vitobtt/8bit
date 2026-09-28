@@ -1,40 +1,32 @@
-# 8 BITS BATTLE
+# PIZZA PANZA
 
-Juego de 8 bits para el aula en el que todos luchan contra todos y solo puede quedar uno. El equipo del profesor hace de servidor y los alumnos se conectan por WebSockets desde el navegador.
+Snake de 8 bits en el que manejas a un pizzero glotón: cada pizza que se come lo hace más largo y más gordo. Si choca contra la pared, contra su propia barriga o contra un horno, vuelve al punto de inicio.
 
-## Arrancar (equipo del profesor)
-1. Doble clic en `INICIAR.bat` (o ejecuta `npm install` y después `npm start`).
-2. Se abre `http://localhost:3000`: es el **panel del profesor**. Tu IP sale arriba a la derecha.
-3. Los alumnos abren en su navegador `http://TU_IP:3000`, escriben su nombre y pulsan **¡A LUCHAR!**
-4. Cuando estén todos, pulsa **EMPEZAR PARTIDA**.
+Funciona entero en el navegador, sin servidor: `public/` se publica tal cual en Vercel (https://8bit-rose.vercel.app).
 
-La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Redes privadas** y acepta.
+## Cómo se juega
+- **Mover:** flechas o WASD. En el móvil, desliza el dedo sobre la pantalla o usa la cruceta.
+- **Pausa:** P o Esc · **Sonido:** M
 
-## Reglas
-- 3 vidas y **10 tiros como máximo** por partida.
-- A los 25 s la zona roja empieza a cerrarse, y fuera de ella pierdes vida. Así la partida siempre termina, aunque todos se queden sin balas.
-- Gana el último que siga vivo. Luego se vuelve a la sala para jugar otra partida.
+| Objeto | Efecto |
+|---|---|
+| Pizza | +10 puntos, creces y engordas 2 kg |
+| Pizza dorada | +50 puntos, creces 3 casillas. Desaparece a los 6 s |
+| Guindilla | Durante 6 s los puntos valen el doble y vas más rápido |
+| Ensalada | ¡Dieta! Pierdes 3 casillas, 6 kg y el combo |
+| Horno | Obstáculo. Salen a partir del nivel 3 |
 
-## Controles
-WASD/flechas para moverte · ratón para apuntar · clic o espacio para disparar · M para el sonido
+## Lo que engancha
+- **Combos:** si comes una pizza menos de 5 s después de la anterior, el multiplicador sube (hasta x5) y el sonido se hace más agudo.
+- **Niveles:** cada 8 pizzas subes de nivel y el pizzero va más rápido.
+- **Engorde visible:** cuantos más kilos, más ancha la barriga y más grande la cabeza.
+- **Récord y top 5** guardados en el navegador. Al perder te dice cuánto te faltó para batir tu récord.
+- **12 logros.** Algunos desbloquean pizzeros nuevos (Napolitano, Picante, Ninja, Dorado, Galáctico). Al acabar cada partida se muestra el siguiente logro por conseguir.
+
+Los récords y logros se guardan en `localStorage`, así que se guardan por navegador y equipo: no se comparten entre alumnos.
 
 ## Ajustes
-Están al principio de `server.js` (modo aula) o `party/server.js` (modo nube): `MAX_SHOTS`, `MAX_HP`, `SPEED`, `ZONE_DELAY` y el mapa (`MAP`).
+Están al principio de `public/client.js`: `START` (punto de inicio), `COMBO_MS`, `PIZZAS_PER_LEVEL`, `FEVER_MS`. La velocidad está en `tickMs()` y los logros en `ACHS`.
 
-## Modo nube (Vercel + PartyKit)
-El modo aula de arriba usa un único proceso Node con estado en memoria y WebSockets sin más — no puede desplegarse en Vercel (funciones serverless, sin proceso persistente). Para jugar desde internet en vez de la red local del aula, el juego se separa en dos partes:
-- **Frontend estático** (`public/`) → Vercel.
-- **Servidor de la partida** (`party/server.js`, misma lógica que `server.js` pero adaptada) → PartyKit (Cloudflare), que sí mantiene el bucle del juego y el estado entre jugadores.
-
-Pasos:
-1. Crea cuenta gratis en [partykit.io](https://partykit.io) y despliega el servidor de juego:
-   ```
-   npx partykit login
-   npm run pk:deploy
-   ```
-   Te dará un host tipo `8bits-battle.TU-USUARIO.partykit.dev`.
-2. Pega ese host en `public/index.html`, en la línea `window.PARTYKIT_HOST = '';`.
-3. Despliega `public/` en Vercel (importa el repo desde vercel.com, o `vercel deploy` con la CLI). `npm run build` no compila nada — solo sirve los archivos estáticos.
-4. Comparte la URL de Vercel con la clase. El primero en abrirla es el profesor (panel de host); los siguientes entran como alumnos.
-
-Para probar el servidor de juego en local antes de desplegarlo: `npm run pk:dev` (se sirve en `ws://localhost:1999/party/main`; pon `window.PARTYKIT_HOST = 'localhost:1999'` mientras pruebas).
+## Probar en local
+Abre `public/index.html` en el navegador, o sirve la carpeta con cualquier servidor estático (`npx serve public`).

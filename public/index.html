@@ -3,86 +3,96 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>8 BITS BATTLE</title>
+  <title>PIZZA PANZA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- Pantalla de entrada (alumnos) -->
-  <section id="join" class="screen" hidden>
-    <h1 class="title">8 BITS<br><span>BATTLE</span></h1>
-    <p class="blink">¡SOLO PUEDE QUEDAR UNO!</p>
-    <form id="joinForm" class="box">
-      <label for="nameInput">TU NOMBRE</label>
-      <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="JUGADOR" required>
-      <button type="submit">¡A LUCHAR!</button>
-    </form>
-    <div class="help">
-      <p>MOVER: WASD / FLECHAS</p>
-      <p>APUNTAR: RATÓN</p>
-      <p>DISPARAR: CLIC / ESPACIO</p>
-      <p>SOLO TIENES <b id="helpShots">10</b> TIROS. ¡NO LOS MALGASTES!</p>
-    </div>
-  </section>
-
-  <!-- Pantalla de juego -->
-  <section id="game" class="screen" hidden>
-    <div class="layout">
-      <div class="stage">
+  <div class="layout">
+    <div class="stage">
+      <div class="screen-wrap">
         <canvas id="canvas" width="960" height="640"></canvas>
-        <div class="hud">
-          <div><span class="lbl">VIDA</span> <span id="hudHp" class="hp"></span></div>
-          <div><span class="lbl">TIROS</span> <span id="hudAmmo" class="ammo"></span> <span id="hudAmmoNum"></span></div>
-          <div><span class="lbl">BAJAS</span> <span id="hudKills">0</span></div>
+
+        <!-- Menú principal -->
+        <div id="menu" class="overlay">
+          <h1 class="title">PIZZA<br><span>PANZA</span></h1>
+          <p class="blink">¡COME PIZZA, ENGORDA Y NO TE CHOQUES!</p>
+          <form id="menuForm" class="box menu-box">
+            <label for="nameInput">TU NOMBRE</label>
+            <input id="nameInput" maxlength="10" autocomplete="off" spellcheck="false" placeholder="PIZZERO">
+            <div class="lbl">TU PIZZERO</div>
+            <div class="skin-picker">
+              <button type="button" id="skinPrev" class="arrow" aria-label="Pizzero anterior">◄</button>
+              <div class="skin-view">
+                <canvas id="skinCanvas" width="96" height="96"></canvas>
+                <div id="skinName"></div>
+                <div id="skinLock" class="skin-lock"></div>
+              </div>
+              <button type="button" id="skinNext" class="arrow" aria-label="Pizzero siguiente">►</button>
+            </div>
+            <button type="submit" id="playBtn">¡A COMER!</button>
+          </form>
+          <div class="help">
+            <p>MOVER: FLECHAS / WASD · PAUSA: P · SONIDO: M</p>
+            <p><b class="c-pizza">PIZZA</b> +10 · <b class="c-gold">DORADA</b> +50 · <b class="c-chili">GUINDILLA</b> PUNTOS X2 · <b class="c-salad">ENSALADA</b> ¡ADELGAZA!</p>
+            <p>ENCADENA PIZZAS RÁPIDO PARA HACER COMBOS</p>
+          </div>
         </div>
+
+        <!-- Fin de partida -->
+        <div id="over" class="overlay" hidden>
+          <h2 id="overTitle" class="over-title">¡CATAPUM!</h2>
+          <p id="overReason" class="dim"></p>
+          <div class="box over-box">
+            <div class="stats">
+              <div><span class="lbl">PUNTOS</span><b id="oScore">0</b></div>
+              <div><span class="lbl">PIZZAS</span><b id="oPizzas">0</b></div>
+              <div><span class="lbl">PESO</span><b id="oKg">0</b></div>
+              <div><span class="lbl">COMBO MÁX</span><b id="oCombo">0</b></div>
+            </div>
+            <p id="oRecord" class="record"></p>
+            <div id="oAchs"></div>
+            <p id="oNext" class="next"></p>
+            <button id="againBtn">JUGAR OTRA VEZ</button>
+            <button id="menuBtn" class="secondary">MENÚ</button>
+            <p class="tiny">ESPACIO / ENTER: OTRA VEZ</p>
+          </div>
+        </div>
+
+        <div id="toast" class="toast" hidden></div>
       </div>
 
-      <aside class="side">
-        <div class="box addr">
-          <div class="lbl">CONÉCTATE EN</div>
-          <div id="addrList"></div>
-        </div>
+      <div class="hud">
+        <div><span class="lbl">PUNTOS</span> <b id="hudScore">0</b></div>
+        <div><span class="lbl">RÉCORD</span> <b id="hudBest">0</b></div>
+        <div><span class="lbl">PESO</span> <b id="hudKg">70 KG</b></div>
+        <div><span class="lbl">NIVEL</span> <b id="hudLevel">1</b></div>
+        <div class="combo"><span class="lbl">COMBO</span> <b id="hudCombo">-</b><span class="combo-bar"><i id="hudComboBar"></i></span></div>
+      </div>
 
-        <div id="hostPanel" class="box" hidden>
-          <div class="lbl">PANEL DEL PROFESOR</div>
-          <button id="btnStart">EMPEZAR PARTIDA</button>
-          <button id="btnStop" class="secondary">TERMINAR PARTIDA</button>
-          <form id="hostJoinForm">
-            <input id="hostName" maxlength="12" placeholder="JUGAR TAMBIÉN" autocomplete="off">
-            <button type="submit" class="secondary">UNIRME</button>
-          </form>
-        </div>
-
-        <div class="box">
-          <div class="lbl">JUGADORES <span id="aliveCount"></span></div>
-          <ul id="playerList"></ul>
-        </div>
-
-        <div class="box">
-          <div class="lbl">BAJAS</div>
-          <ul id="feed"></ul>
-        </div>
-
-        <div class="tiny">M: SONIDO ON/OFF</div>
-      </aside>
+      <div id="pad" class="pad">
+        <button data-dir="up" aria-label="Arriba">▲</button>
+        <button data-dir="left" aria-label="Izquierda">◄</button>
+        <button data-dir="down" aria-label="Abajo">▼</button>
+        <button data-dir="right" aria-label="Derecha">►</button>
+      </div>
     </div>
-  </section>
 
-  <div id="offline" class="offline" hidden>
-    <p>SIN CONEXIÓN CON EL SERVIDOR</p>
-    <p class="blink">REINTENTANDO...</p>
+    <aside class="side">
+      <div class="box">
+        <div class="lbl">MEJORES PARTIDAS</div>
+        <ol id="topList"></ol>
+      </div>
+      <div class="box">
+        <div class="lbl">LOGROS <span id="achCount"></span></div>
+        <ul id="achList"></ul>
+      </div>
+      <div class="tiny">CADA LOGRO DESBLOQUEA PIZZEROS NUEVOS</div>
+    </aside>
   </div>
 
-  <script>
-    // Vercel (este frontend) + Render (server.js como backend):
-    // pon aquí el host que te da Render, ej. "8bit-xxxx.onrender.com".
-    window.GAME_WS_HOST = 'eightbit-d7p6.onrender.com';
-    // Alternativa: Vercel + PartyKit (ej. "8bits-battle.TU-USUARIO.partykit.dev").
-    window.PARTYKIT_HOST = '';
-    // Si sirves este archivo con npm run dev (server.js en LAN), deja ambos vacíos.
-  </script>
   <script src="client.js"></script>
 </body>
 </html>
