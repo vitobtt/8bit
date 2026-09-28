@@ -15,7 +15,9 @@ const ROWS = canvas.height / CELL;     // 20
 const START = { x: 6, y: 10, len: 3 }; // punto de inicio del pizzero
 const BASE_KG = 70;
 const COMBO_MS = 5000;                 // tiempo para encadenar pizzas
-const PIZZAS_PER_LEVEL = 8;
+const SEGS_PER_LEVEL = 5;              // cada 5 casillas de tamaño, nivel nuevo
+const BASE_TICK = 150;                 // ms por paso con el tamaño inicial
+const MIN_TICK = 55;                   // velocidad máxima
 const FEVER_MS = 6000;                 // duración del efecto guindilla
 
 const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
@@ -248,8 +250,13 @@ function startGame() {
 
 function setState(s) { state = s; stateAt = now(); }
 
+// Tamaño contando lo que aún está creciendo
+function size() { return run.body.length + run.grow; }
+
+// La dificultad va con el tamaño: cada casilla que crece el pizzero lo acelera un poco.
+// Si adelgaza con una ensalada, también frena.
 function tickMs() {
-  const base = Math.max(62, 150 - (run.level - 1) * 11);
+  const base = Math.max(MIN_TICK, BASE_TICK * Math.pow(0.98, size() - START.len));
   return now() < run.feverUntil ? base * 0.75 : base;
 }
 
@@ -280,7 +287,9 @@ const ITEM_LIFE = { gold: 6000, chili: 7000, salad: 9000 };
 function spawnItem(type) {
   const c = freeCell(type === 'salad' ? 4 : 3);
   if (!c) return;
-  run.items.push({ type, ...c, born: now(), until: ITEM_LIFE[type] ? now() + ITEM_LIFE[type] : 0 });
+  // Cuanto más alto el nivel, menos duran los objetos especiales (mínimo la mitad)
+  const life = ITEM_LIFE[type] ? ITEM_LIFE[type] * Math.max(0.5, 1 - (run.level - 1) * 0.06) : 0;
+  run.items.push({ type, ...c, born: now(), until: life ? now() + life : 0 });
 }
 const hasItem = t => run.items.some(i => i.type === t);
 
@@ -332,6 +341,7 @@ function eat(item) {
     run.kg = Math.max(BASE_KG, run.kg - 6);
     run.combo = 0;
     floatText('¡DIETA! -6 KG', cx, cy, '#00e436');
+    floatText('MÁS LENTO', cx, cy - 18, '#29adff');
     burst(cx, cy, ['#00e436', '#008751'], 14);
     sfx.salad();
     return;
@@ -367,7 +377,8 @@ function eat(item) {
   floatText(`+${pts}`, cx, cy, item.type === 'gold' ? '#ffec27' : '#fff1e8');
   if (run.combo >= 2) floatText(`COMBO X${Math.min(run.combo, 5)}`, cx, cy - 18, '#29adff');
 
-  const lvl = 1 + Math.floor(run.pizzas / PIZZAS_PER_LEVEL);
+  // El nivel sube con el tamaño y nunca baja (aunque adelgaces)
+  const lvl = 1 + Math.floor((size() - START.len) / SEGS_PER_LEVEL);
   if (lvl > run.level) levelUp(lvl);
   checkAchs();
 }
@@ -612,13 +623,15 @@ function updateHud(t) {
   if (!run) return;
   const comboLeft = Math.max(0, 1 - (t - run.lastEat) / COMBO_MS);
   const comboOn = run.combo >= 1 && comboLeft > 0 && state === 'play';
-  const key = [run.score, save.best, run.kg, run.level, comboOn ? run.combo : 0].join('|');
+  const speed = (BASE_TICK / tickMs()).toFixed(1);
+  const key = [run.score, save.best, run.kg, run.level, speed, comboOn ? run.combo : 0].join('|');
   if (key !== lastHud) {
     lastHud = key;
     $('#hudScore').textContent = run.score;
     $('#hudBest').textContent = Math.max(save.best, run.score);
     $('#hudKg').textContent = `${run.kg} KG`;
     $('#hudLevel').textContent = run.level;
+    $('#hudSpeed').textContent = `X${speed}`;
     $('#hudCombo').textContent = comboOn ? `X${Math.min(run.combo, 5)}` : '-';
   }
   $('#hudComboBar').style.width = `${comboOn ? comboLeft * 100 : 0}%`;
