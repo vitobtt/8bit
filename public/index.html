@@ -36,7 +36,8 @@
           </form>
           <div class="help">
             <p>MOVER: FLECHAS / WASD · PAUSA: P · SONIDO: M</p>
-            <p><b class="c-pizza">PIZZA</b> +10 · <b class="c-gold">DORADA</b> +50 · <b class="c-chili">GUINDILLA</b> PUNTOS X2 · <b class="c-salad">ENSALADA</b> ¡ADELGAZA!</p>
+            <p><b class="c-salad">ESPACIO</b>: ERUCTO TURBO CUANDO LA BARRA DE GASES ESTÁ LLENA. ¡SALES DISPARADO Y ATRAVIESAS TU BARRIGA!</p>
+            <p><b class="c-pizza">PIZZA</b> +10 · <b class="c-gold">DORADA</b> +50 · <b class="c-chili">GUINDILLA</b> PUNTOS X2 · <b class="c-salad">ENSALADA</b> ¡ADELGAZA! · <b class="c-gold">PIÑA</b> ¿?¿?</p>
             <p>ENCADENA PIZZAS RÁPIDO PARA HACER COMBOS</p>
           </div>
         </div>
@@ -71,6 +72,7 @@
         <div><span class="lbl">NIVEL</span> <b id="hudLevel">1</b></div>
         <div><span class="lbl">VELOCIDAD</span> <b id="hudSpeed">X1.0</b></div>
         <div class="combo"><span class="lbl">COMBO</span> <b id="hudCombo">-</b><span class="combo-bar"><i id="hudComboBar"></i></span></div>
+        <div id="hudGasBox" class="gas"><span class="lbl">GASES</span><span class="gas-bar"><i id="hudGas"></i></span></div>
       </div>
 
       <div id="pad" class="pad">
@@ -78,6 +80,7 @@
         <button data-dir="left" aria-label="Izquierda">◄</button>
         <button data-dir="down" aria-label="Abajo">▼</button>
         <button data-dir="right" aria-label="Derecha">►</button>
+        <button class="burp" aria-label="Eructo turbo">BURP</button>
       </div>
     </div>
 

@@ -19,6 +19,10 @@ const SEGS_PER_LEVEL = 5;              // cada 5 casillas de tamaño, nivel nuev
 const BASE_TICK = 150;                 // ms por paso con el tamaño inicial
 const MIN_TICK = 55;                   // velocidad máxima
 const FEVER_MS = 6000;                 // duración del efecto guindilla
+const GAS_MAX = 10;                    // pizzas para llenar la barra de gases
+const BURP_STEPS = 5;                  // casillas que sale disparado con el eructo turbo
+const GHOST_STEPS = 3;                 // pasos extra atravesando su barriga tras el eructo
+const CHAOS_MS = 6000;                 // duración del efecto de la piña
 
 const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
 const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
@@ -43,9 +47,11 @@ const ACHS = [
   { id: 'first',     name: 'PRIMER BOCADO',       desc: 'Come tu primera pizza',           test: r => r.pizzas >= 1 },
   { id: 'p10',       name: 'CON HAMBRE',          desc: '10 pizzas en una partida',        test: r => r.pizzas >= 10 },
   { id: 'chili',     name: '¡PICA PICA!',         desc: 'Cómete una guindilla',            test: r => r.chilis >= 1 },
+  { id: 'burp',      name: '¡BUUURP!',            desc: 'Suelta un eructo turbo',          test: r => r.burps >= 1 },
   { id: 'p25',       name: 'BUEN SAQUE',          desc: '25 pizzas en una partida',        test: r => r.pizzas >= 25 },
   { id: 'combo5',    name: 'MÁQUINA DE COMBOS',   desc: 'Consigue un combo x5',            test: r => r.bestCombo >= 5 },
   { id: 'gold3',     name: 'FIEBRE DEL ORO',      desc: '3 pizzas doradas en una partida', test: r => r.golds >= 3 },
+  { id: 'pina3',     name: 'SIN MIEDO A LA PIÑA', desc: 'Come 3 piñas en una partida',     test: r => r.pinas >= 3 },
   { id: 'lvl5',      name: 'VELOCISTA',           desc: 'Llega al nivel 5',                test: r => r.level >= 5 },
   { id: 'kg150',     name: 'PESO PESADO',         desc: 'Llega a 150 kg',                  test: r => r.kg >= 150 },
   { id: 'score3000', name: 'MAESTRO PIZZERO',     desc: 'Haz 3000 puntos',                 test: r => r.score >= 3000 },
@@ -59,6 +65,7 @@ const SKINS = [
   { id: 'napoli',  name: 'NAPOLITANO', req: 'p10',       hat: '#fff1e8', hatD: '#c2c3c7', coat: '#00e436', coatD: '#008751', trim: '#ff004d', skin: '#ffccaa', hair: '#1a1a1a' },
   { id: 'picante', name: 'PICANTE',    req: 'chili',     hat: '#ff004d', hatD: '#7e2553', coat: '#ff004d', coatD: '#7e2553', trim: '#ffec27', skin: '#ffccaa', hair: '#1a1a1a' },
   { id: 'ninja',   name: 'NINJA',      req: 'combo5',    hat: '#5f574f', hatD: '#333333', coat: '#5f574f', coatD: '#333333', trim: '#ff004d', skin: '#ffccaa', hair: '#1a1a1a' },
+  { id: 'hawai',   name: 'HAWAIANO',   req: 'pina3',     hat: '#ffec27', hatD: '#ffa300', coat: '#29adff', coatD: '#065ab5', trim: '#ff77a8', skin: '#ffccaa', hair: '#5f3a1e' },
   { id: 'oro',     name: 'DORADO',     req: 'score3000', hat: '#ffec27', hatD: '#ffa300', coat: '#ffa300', coatD: '#ab5236', trim: '#fff1e8', skin: '#ffccaa', hair: '#ab5236' },
   { id: 'galaxia', name: 'GALÁCTICO',  req: 'total200',  hat: '#83769c', hatD: '#1d2b53', coat: '#7e2553', coatD: '#1d2b53', trim: '#29adff', skin: '#c2f0ff', hair: '#29adff' },
 ];
@@ -102,6 +109,10 @@ const sfx = {
   death: () => [440, 330, 220, 110].forEach((f, i) => beep(f, 0.14, { delay: i * 0.11, vol: 0.07 })),
   record: () => [523, 659, 784, 1046, 784, 1046].forEach((f, i) => beep(f, 0.14, { delay: 0.6 + i * 0.12 })),
   go: () => beep(1046, 0.15),
+  // Eructo: ráfaga de notas graves y desafinadas
+  burp: () => { for (let k = 0; k < 7; k++) beep(70 + Math.random() * 50, 0.08, { type: 'sawtooth', vol: 0.14, delay: k * 0.045, slide: -25 }); },
+  gasReady: () => { beep(330, 0.1, { type: 'triangle', vol: 0.1 }); beep(494, 0.14, { type: 'triangle', vol: 0.1, delay: 0.1 }); },
+  pina: () => [880, 440, 990, 330, 1320, 262].forEach((f, i) => beep(f, 0.07, { delay: i * 0.05, type: 'triangle', vol: 0.1 })),
 };
 
 // ------------------------------------------------------------
@@ -137,6 +148,16 @@ const SALAD = [
   '..wwww..',
   '........',
 ];
+const PINA = [
+  '..g.g...',
+  '...gg.g.',
+  '..yyyy..',
+  '.yoyoyy.',
+  '.yyoyoy.',
+  '.yoyoyy.',
+  '.yyoyoy.',
+  '..yyyy..',
+];
 const OVEN = [
   'bbbbbbbb',
   'bBbbBbbB',
@@ -153,6 +174,7 @@ const PAL = {
   chili:  { g: '#00e436', r: '#ff004d', w: '#fff1e8' },
   salad:  { g: '#00e436', G: '#008751', r: '#ff004d', w: '#c2c3c7' },
   oven:   { b: '#5f574f', B: '#ab5236', f: '#ffa300', F: '#ff004d' },
+  pina:   { g: '#00e436', y: '#ffec27', o: '#ab5236' },
 };
 
 function drawSprite(g, rows, pal, x, y, px) {
@@ -225,8 +247,9 @@ function newRun() {
   for (let i = 0; i < START.len; i++) body.push({ x: START.x - i, y: START.y });
   run = {
     body, dir: 'right', queue: [], grow: 0,
-    score: 0, pizzas: 0, golds: 0, chilis: 0, kg: BASE_KG, level: 1,
+    score: 0, pizzas: 0, golds: 0, chilis: 0, pinas: 0, burps: 0, kg: BASE_KG, level: 1,
     combo: 0, bestCombo: 0, lastEat: -1e9, feverUntil: 0,
+    gas: 0, dash: 0, ghost: 0, chaos: null, steps: 0,
     items: [], ovens: [], newAchs: [], deathReason: '',
     startBest: save.best,
   };
@@ -256,6 +279,7 @@ function size() { return run.body.length + run.grow; }
 // La dificultad va con el tamaño: cada casilla que crece el pizzero lo acelera un poco.
 // Si adelgaza con una ensalada, también frena.
 function tickMs() {
+  if (run.dash > 0) return 28;         // eructo turbo: sale disparado
   const base = Math.max(MIN_TICK, BASE_TICK * Math.pow(0.98, size() - START.len));
   return now() < run.feverUntil ? base * 0.75 : base;
 }
@@ -283,7 +307,7 @@ function freeCell(minDistFromHead = 3, avoidAhead = false) {
   return null;
 }
 
-const ITEM_LIFE = { gold: 6000, chili: 7000, salad: 9000 };
+const ITEM_LIFE = { gold: 6000, chili: 7000, salad: 9000, pina: 8000 };
 function spawnItem(type) {
   const c = freeCell(type === 'salad' ? 4 : 3);
   if (!c) return;
@@ -297,12 +321,85 @@ function rollSpecials() {
   if (!hasItem('gold') && Math.random() < 0.13) spawnItem('gold');
   if (!hasItem('chili') && run.level >= 2 && Math.random() < 0.09) spawnItem('chili');
   if (!hasItem('salad') && run.pizzas >= 5 && Math.random() < 0.14) spawnItem('salad');
+  if (!hasItem('pina') && run.level >= 2 && Math.random() < 0.1) spawnItem('pina');
+}
+
+// ------------------------------------------------------------
+//  Piña: efecto de caos aleatorio
+// ------------------------------------------------------------
+const CHAOS = [
+  { id: 'reves',  text: '¡CONTROLES AL REVÉS!', color: '#ff77a8' },
+  { id: 'vuelta', text: '¡EL MUNDO DEL REVÉS!', color: '#29adff' },
+  { id: 'huida',  text: '¡LAS PIZZAS HUYEN!',   color: '#ffa300' },
+  { id: 'lluvia', text: '¡LLUEVEN PIZZAS!',     color: '#ffec27' },
+];
+const chaosOn = id => !!run && !!run.chaos && run.chaos.id === id && now() < run.chaos.until;
+
+function startChaos() {
+  const c = CHAOS[Math.floor(Math.random() * CHAOS.length)];
+  run.chaos = { ...c, until: now() + CHAOS_MS };
+  showBanner(`PIÑA: ${c.text}`, c.color);
+  shakeScreen(300, 6);
+  if (c.id === 'lluvia') {
+    // Pizzas extra que caen del cielo y desaparecen al acabar el efecto
+    for (let k = 0; k < 6; k++) {
+      const cell = freeCell(2);
+      if (!cell) break;
+      run.items.push({ type: 'pizza', ...cell, born: now(), until: run.chaos.until, extra: true });
+      burst(cell.x * CELL + CELL / 2, cell.y * CELL, ['#ffec27', '#ff004d'], 6);
+    }
+  }
+}
+
+// Las pizzas se alejan una casilla del pizzero (cada dos pasos, para que se puedan alcanzar)
+function fleeItems() {
+  const h = run.body[0];
+  for (const it of run.items) {
+    if (it.type !== 'pizza' && it.type !== 'gold') continue;
+    let best = null, bestD = Math.abs(it.x - h.x) + Math.abs(it.y - h.y);
+    for (const v of Object.values(DIRS)) {
+      const x = it.x + v.x, y = it.y + v.y;
+      if (x < 1 || y < 1 || x >= COLS - 1 || y >= ROWS - 1 || occupied(x, y)) continue;
+      const d = Math.abs(x - h.x) + Math.abs(y - h.y);
+      if (d > bestD) { bestD = d; best = { x, y }; }
+    }
+    if (best) { it.x = best.x; it.y = best.y; }
+  }
+}
+
+// ------------------------------------------------------------
+//  Eructo turbo
+// ------------------------------------------------------------
+function addGas(n) {
+  const wasFull = run.gas >= GAS_MAX;
+  run.gas = Math.min(GAS_MAX, run.gas + n);
+  if (!wasFull && run.gas >= GAS_MAX) {
+    sfx.gasReady();
+    showBanner('¡GASES A TOPE! ESPACIO = ERUCTO', '#00e436');
+  }
+}
+
+function burp() {
+  if (state !== 'play' || run.gas < GAS_MAX || run.dash > 0) return;
+  run.gas = 0;
+  run.burps++;
+  run.dash = BURP_STEPS;
+  run.ghost = BURP_STEPS + GHOST_STEPS;
+  acc = 0;
+  const h = run.body[0];
+  const cx = h.x * CELL + CELL / 2, cy = h.y * CELL + CELL / 2;
+  floatText('¡BUUURP!', cx, cy - 24, '#00e436');
+  burst(cx, cy, ['#00e436', '#a8e72e', '#008751'], 24);
+  shakeScreen(300, 7);
+  sfx.burp();
+  checkAchs();
 }
 
 // ------------------------------------------------------------
 //  Lógica de cada paso
 // ------------------------------------------------------------
 function queueDir(d) {
+  if (chaosOn('reves')) d = OPP[d];
   if (state === 'ready' && run.queue.length === 0 && d !== OPP[run.dir]) { run.dir = d; return; }
   if (state !== 'play' && state !== 'ready') return;
   const last = run.queue.length ? run.queue[run.queue.length - 1] : run.dir;
@@ -318,15 +415,30 @@ function step() {
   // La cola se mueve en este mismo paso, salvo que esté creciendo
   const bodyToCheck = run.grow > 0 ? run.body : run.body.slice(0, -1);
 
-  if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) return die('¡TE HAS COMIDO LA PARED!');
-  if (bodyToCheck.some(s => s.x === nx && s.y === ny)) return die('¡TE HAS MORDIDO LA BARRIGA!');
-  if (run.ovens.some(o => o.x === nx && o.y === ny)) return die('¡TE HAS METIDO EN EL HORNO!');
+  const ghost = run.ghost > 0;         // tras el eructo atraviesa su barriga y los hornos
+
+  if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) {
+    if (run.dash > 0) { run.dash = 0; return; }   // el eructo frena en seco contra la pared
+    return die('¡TE HAS COMIDO LA PARED!');
+  }
+  if (!ghost && bodyToCheck.some(s => s.x === nx && s.y === ny)) return die('¡TE HAS MORDIDO LA BARRIGA!');
+  if (!ghost && run.ovens.some(o => o.x === nx && o.y === ny)) return die('¡TE HAS METIDO EN EL HORNO!');
 
   run.body.unshift({ x: nx, y: ny });
   if (run.grow > 0) run.grow--; else run.body.pop();
 
+  if (run.dash > 0) {
+    run.dash--;
+    const tail = run.body[run.body.length - 1];
+    burst(tail.x * CELL + CELL / 2, tail.y * CELL + CELL / 2, ['#00e436', '#a8e72e'], 3);
+  }
+  if (run.ghost > 0) run.ghost--;
+
   const i = run.items.findIndex(it => it.x === nx && it.y === ny);
   if (i >= 0) eat(run.items.splice(i, 1)[0]);
+
+  run.steps++;
+  if (chaosOn('huida') && run.steps % 2 === 0) fleeItems();
 }
 
 function eat(item) {
@@ -356,12 +468,20 @@ function eat(item) {
   let pts = 0;
   if (item.type === 'pizza') {
     pts = 10; run.grow += 1; run.kg += 2; run.pizzas++; save.pizzas++;
+    addGas(1);
     burst(cx, cy, ['#ffec27', '#ff004d', '#ab5236'], 10);
     sfx.eat(run.combo);
-    spawnItem('pizza');
-    rollSpecials();
+    // Las pizzas de la lluvia de la piña no reponen la pizza principal
+    if (!item.extra) { spawnItem('pizza'); rollSpecials(); }
+  } else if (item.type === 'pina') {
+    pts = 30; run.grow += 1; run.kg += 2; run.pizzas++; run.pinas++; save.pizzas++;
+    addGas(2);
+    burst(cx, cy, ['#ffec27', '#00e436', '#ab5236'], 18);
+    sfx.pina();
+    startChaos();
   } else if (item.type === 'gold') {
     pts = 50; run.grow += 3; run.kg += 5; run.pizzas++; run.golds++; save.pizzas++;
+    addGas(3);
     burst(cx, cy, ['#ffec27', '#fff1e8', '#ffa300'], 24);
     sfx.gold();
     shakeScreen(150, 3);
@@ -492,6 +612,12 @@ function render(t) {
   if (t < shake.until) {
     ctx.translate((Math.random() - 0.5) * shake.power * 2, (Math.random() - 0.5) * shake.power * 2);
   }
+  // Piña "mundo del revés": se gira todo el tablero (los textos grandes no)
+  ctx.save();
+  if (chaosOn('vuelta')) {
+    ctx.translate(canvas.width, canvas.height);
+    ctx.rotate(Math.PI);
+  }
   ctx.drawImage(floor, 0, 0);
 
   if (run) {
@@ -529,7 +655,12 @@ function render(t) {
     ctx.fillText(s.s, s.x, s.y - s.t * 40);
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
+  // Aviso del efecto de la piña con la cuenta atrás
+  if (run && run.chaos && t < run.chaos.until && state === 'play') {
+    bigText(`${run.chaos.text} ${Math.ceil((run.chaos.until - t) / 1000)}`, canvas.height - 28, run.chaos.color, 14);
+  }
   if (banner && t - banner.at < 1800) bigText(banner.s, canvas.height * 0.2, banner.c, 20);
   if (state === 'ready') bigText('¡PREPARADO!', canvas.height / 2 - 60, '#ffec27', 28);
   if (state === 'pause') {
@@ -569,6 +700,10 @@ function drawItem(it, t) {
   }
   else if (it.type === 'chili') drawSprite(ctx, CHILI, PAL.chili, x, y, CELL / 8);
   else if (it.type === 'salad') drawSprite(ctx, SALAD, PAL.salad, x, y, CELL / 8);
+  else if (it.type === 'pina') {
+    // La piña tiembla un poco: se nota que es peligrosa
+    drawSprite(ctx, PINA, PAL.pina, x + (Math.floor(t / 80) % 2 ? 1 : -1), y, CELL / 8);
+  }
 }
 
 function drawPizzero(t) {
@@ -579,6 +714,8 @@ function drawPizzero(t) {
   const dying = state === 'dying' && Math.floor(t / 90) % 2;
   const coat = dying ? '#ff004d' : skin.coat;
   const center = s => ({ x: s.x * CELL + CELL / 2, y: s.y * CELL + CELL / 2 });
+  // Mientras atraviesa cosas tras el eructo, el pizzero se ve medio transparente
+  if (run.ghost > 0) ctx.globalAlpha = Math.floor(t / 60) % 2 ? 0.35 : 0.65;
 
   // Tramos del cuerpo: rectángulos que unen el centro de cada casilla con la siguiente
   const seg = (a, b, w, color) => {
@@ -606,7 +743,8 @@ function drawPizzero(t) {
   ctx.fillRect(h.x - th / 2 - 2, h.y - th / 2 - 2, th + 4, th + 4);
   const size = Math.round(CELL * (1.05 + stage * 0.1));
   const chomp = t < chompUntil || (state === 'play' && Math.floor(t / 220) % 2 && nearFood());
-  drawHead(ctx, skin, h.x, h.y - 2, size, run.dir, chomp);
+  drawHead(ctx, skin, h.x, h.y - 2, size, run.dir, chomp || run.dash > 0);
+  ctx.globalAlpha = 1;
 }
 
 // El pizzero abre la boca cuando tiene comida cerca
@@ -635,6 +773,8 @@ function updateHud(t) {
     $('#hudCombo').textContent = comboOn ? `X${Math.min(run.combo, 5)}` : '-';
   }
   $('#hudComboBar').style.width = `${comboOn ? comboLeft * 100 : 0}%`;
+  $('#hudGas').style.width = `${(run.gas / GAS_MAX) * 100}%`;
+  $('#hudGasBox').classList.toggle('full', run.gas >= GAS_MAX);
 }
 
 function showOverlay(id) {
@@ -778,6 +918,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
+  if (e.code === 'Space' || e.code === 'KeyB') { e.preventDefault(); burp(); return; }
   const d = KEYS[e.code];
   if (d) { e.preventDefault(); queueDir(d); }
 });
@@ -797,12 +938,15 @@ canvas.addEventListener('touchend', e => {
   const t = e.changedTouches[0];
   const dx = t.clientX - touch0.x, dy = t.clientY - touch0.y;
   touch0 = null;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) { burp(); return; }   // un toque = eructo
   queueDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
 }, { passive: true });
 
 for (const b of document.querySelectorAll('#pad button')) {
-  b.addEventListener('pointerdown', e => { e.preventDefault(); queueDir(b.dataset.dir); });
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (b.dataset.dir) queueDir(b.dataset.dir); else burp();
+  });
 }
 
 $('#menuForm').addEventListener('submit', e => { e.preventDefault(); startGame(); });

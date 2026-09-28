@@ -192,6 +192,11 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
 .combo { display: flex; align-items: center; gap: 8px; }
 .combo-bar { display: inline-block; width: 80px; height: 10px; background: #1d2b53; border: 2px solid #000; }
 .combo-bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.gas { display: flex; align-items: center; gap: 8px; }
+.gas-bar { display: inline-block; width: 80px; height: 10px; background: #1d2b53; border: 2px solid #000; }
+.gas-bar i { display: block; height: 100%; width: 0; background: #008751; }
+.gas.full .gas-bar i { background: var(--green); animation: blink .4s steps(1) infinite; }
+.gas.full::after { content: '¡ESPACIO!'; color: var(--green); font-size: 10px; animation: blink .4s steps(1) infinite; }
 
 /* Cruceta táctil: solo en pantallas táctiles */
 .pad { display: none; }
@@ -209,6 +214,7 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
   .pad [data-dir="left"] { grid-column: 1; grid-row: 2; }
   .pad [data-dir="down"] { grid-column: 2; grid-row: 2; }
   .pad [data-dir="right"] { grid-column: 3; grid-row: 2; }
+  .pad .burp { grid-column: 3; grid-row: 1; font-size: 10px; background: #008751; box-shadow: inset -4px -4px 0 #065ab5, 4px 4px 0 #000; }
 }
 
 /* ---- Panel lateral ---- */
